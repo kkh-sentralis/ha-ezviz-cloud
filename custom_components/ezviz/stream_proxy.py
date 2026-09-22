@@ -22,10 +22,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
-from pyezvizapi.cloud_stream import copy_cloud_stream_to_mpegts
 from pyezvizapi.exceptions import PyEzvizError
 
-from homeassistant.components.http import HomeAssistantView, async_sign_path
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant, callback
 
 if TYPE_CHECKING:
@@ -42,6 +42,9 @@ SIGNATURE_LIFETIME = timedelta(hours=12)
 # Le producteur remplit d'avance pendant que le consommateur ecrit ; au-dela on
 # le laisse bloquer, sinon une connexion lente ferait gonfler la memoire.
 QUEUE_SIZE = 64
+
+# Repli si le composant http ne publie pas son port.
+DEFAULT_HTTP_PORT = 8123
 
 
 class _QueueWriter:
@@ -97,6 +100,12 @@ class EzvizCloudStreamView(HomeAssistantView):
         writer = _QueueWriter(self.hass, queue)
 
         def _produce() -> None:
+            # Import tardif : ce module tire subprocess, threading et ffmpeg, et
+            # l'importer au chargement de la plateforme bloque la boucle.
+            from pyezvizapi.cloud_stream import (  # noqa: PLC0415
+                copy_cloud_stream_to_mpegts,
+            )
+
             try:
                 copy_cloud_stream_to_mpegts(client, serial, writer)
             except PyEzvizError:
@@ -149,6 +158,12 @@ def async_stream_url(hass: HomeAssistant, serial: str) -> str:
     d'instances ne renseignent pas.
     """
     signed = async_sign_path(
-        hass, STREAM_URL.format(serial=serial), SIGNATURE_LIFETIME
+        hass,
+        STREAM_URL.format(serial=serial),
+        SIGNATURE_LIFETIME,
+        use_content_user=True,
     )
-    return f"http://127.0.0.1:{hass.http.server_port}{signed}"
+    # getattr defensif : le port est un detail d'implementation du composant
+    # http, et une URL de flux ne merite pas de casser sur un renommage.
+    port = getattr(hass.http, "server_port", DEFAULT_HTTP_PORT)
+    return f"http://127.0.0.1:{port}{signed}"
