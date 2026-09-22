@@ -72,8 +72,8 @@ DEFAULT_HTTP_PORT = 8123
 BLOCK_SIZE = 32 * 1024
 
 # Sondage d'entree de ffmpeg, dimensionne pour le DIRECT et non pour l'analyse.
-PROBE_SIZE = 96 * 1024        # octets
-ANALYZE_DURATION = 1_000_000  # microsecondes, soit une seconde
+PROBE_SIZE = 32 * 1024        # octets
+ANALYZE_DURATION = 500_000  # microsecondes, soit une demi-seconde
 
 # Au-dela, on considere que cette tentative ne donnera rien et on passe a la
 # suivante. Le direct ne tolere pas qu'on attende plus longtemps.
@@ -87,8 +87,6 @@ FIRST_OUTPUT_TIMEOUT = 8.0
 # passe maintenant, c'est redhibitoire.
 _WORKING_CODEC: dict[str, int] = {}
 
-# Delai laisse a la camera pour commencer a diffuser apres son reveil.
-WAKE_SETTLE = 3.0
 
 
 
@@ -491,13 +489,13 @@ class EzvizCloudStreamView(HomeAssistantView):
             remux: subprocess.Popen[bytes] | None = None
             websocket: _WebSocket | None = None
             try:
-                # Reveiller la camera AVANT d'ouvrir le flux, puis LUI LAISSER
-                # LE TEMPS de s'executer. Sur batterie, elle ne pousse rien tant
-                # qu'on ne l'a pas sollicitee, et ouvrir dans la foulee de
-                # l'ordre fait echouer la premiere demande.
+                # Le reveil est demande mais on N'ATTEND PAS : le montage
+                # manuel de reference ne reveille meme pas, et diffuse tout de
+                # suite. Les trois secondes d'attente etaient du cout pur a
+                # chaque ouverture, payees surtout par les cameras deja
+                # eveillees -- c'est-a-dire la plupart du temps.
                 with suppress(HTTPError, PyEzvizError):
                     client.get_detection_sensibility(serial)
-                    time.sleep(WAKE_SETTLE)
 
                 token = _TOKEN.get(open_host, app_key, app_secret)
                 try:
