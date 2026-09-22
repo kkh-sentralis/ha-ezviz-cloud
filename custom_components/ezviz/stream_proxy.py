@@ -101,12 +101,16 @@ SYNC_SEARCH_LIMIT = 200
 #                   il PERD des images, ce qui saccade
 TARGET_WIDTH = 1920
 
-VIDEO_ARGS = [
-    "-vf", f"scale={TARGET_WIDTH}:-2",
-    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-    "-g", "30",          # une image cle par seconde : demarrage rapide
-    "-b:v", "2M",
-]
+# ⚠ MESURE EN COURS (1.0.24) : copie sans transcodage.
+#
+# Le flux transcode ne rend que 0,6 a 1,9 image/s, la ou un direct en demande
+# quinze a vingt-cinq. Deux causes possibles, et leurs correctifs s'opposent :
+# soit le transport TCP affame la chaine, soit libx264 sature le Pi et le tube
+# remonte jusqu'au serveur, qui jette.
+#
+# Copier sans encoder retire l'encodeur de l'equation : si la cadence reste
+# basse, c'est le transport ; si elle remonte, c'est le Pi.
+VIDEO_ARGS = ["-c:v", "copy"]
 
 # Deux tentatives, dans cet ordre.
 #
