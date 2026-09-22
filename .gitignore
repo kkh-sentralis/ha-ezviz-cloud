@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# Le jeton EZVIZ est un secret : jamais dans le depot.
+ezviz_token.txt
