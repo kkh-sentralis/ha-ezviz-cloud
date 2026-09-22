@@ -1,5 +1,5 @@
 > Note historique : ce document décrit le protocole WebSocket rétro-conçu
-> avant de découvrir que  gère le transport VTM nativement.
+> avant de découvrir que `pyezvizapi` gère le transport VTM nativement.
 > L'intégration ne l'utilise plus.
 
 # EZVIZ HB8C — comment obtenir le flux live
