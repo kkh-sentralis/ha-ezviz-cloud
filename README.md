@@ -1,93 +1,85 @@
-<h1 align="center">EZVIZ</h1>
+# EZVIZ
 
-<p align="center">
-  <em>L'intégration EZVIZ de Home Assistant, avec le flux des caméras sur batterie.</em>
-</p>
-
-<p align="center">
-  <a href="https://github.com/kkh-sentralis/ha-ezviz-cloud/releases"><img alt="Version" src="https://img.shields.io/github/v/release/kkh-sentralis/ha-ezviz-cloud?style=flat-square&color=0a84ff"></a>
-  <img alt="HACS" src="https://img.shields.io/badge/HACS-custom-0a84ff?style=flat-square">
-  <img alt="Home Assistant" src="https://img.shields.io/badge/Home%20Assistant-2026.9%2B-0a84ff?style=flat-square">
-  <img alt="Licence" src="https://img.shields.io/badge/licence-Apache%202.0-0a84ff?style=flat-square">
-</p>
-
----
+L'intégration EZVIZ de Home Assistant, avec le flux
+des caméras sur batterie.
 
 ## Installation
 
-1. HACS → dépôt personnalisé → ce dépôt, type **Integration**
-2. Télécharger **EZVIZ**, redémarrer Home Assistant
-3. *Paramètres → Ajouter une intégration → EZVIZ*, entrer son compte
+1. HACS → dépôt personnalisé, type **Integration**
+2. Télécharger **EZVIZ**, redémarrer
+3. *Paramètres → Ajouter une intégration → EZVIZ*
 
-**Rien d'autre.** Pas d'add-on, aucun fichier à créer, aucun jeton à coller.
+Pas d'add-on. Aucun fichier à créer. Aucun jeton.
 
----
+## Ce que ce fork corrige
 
-## Les deux corrections
+### L'AOV ne casse plus le compte
 
-### 1&nbsp;· L'AOV ne casse plus le compte
+Une caméra sur batterie en *Always-On Video*
+renvoie le mode `7`, absent de l'énumération de la
+version épinglée. L'intégration lève, et **aucune**
+caméra du compte ne se configure.
 
-Une caméra sur batterie en *Always-On Video* renvoie le mode de fonctionnement
-`7`, absent de l'énumération de la version épinglée. L'intégration lève, et
-**aucune** caméra du compte ne se configure.
+Le correctif existe en amont, mais Home Assistant
+épingle une version obsolète — y compris sur `dev` :
 
-Le correctif existe en amont, mais Home Assistant épingle une version obsolète
-— y compris sur sa branche `dev` :
-
-| | |
+| Source | Version |
 |---|---|
-| HA 2026.9.3 | `pyezvizapi == 1.0.0.7` |
-| HA `dev` | `pyezvizapi == 1.0.0.7` |
-| PyPI | **`1.0.5.0`** — contient `ALWAYS_ON_VIDEO = 7` |
+| HA 2026.9.3 | `1.0.0.7` |
+| HA `dev` | `1.0.0.7` |
+| PyPI | **`1.0.5.0`** |
 
-### 2&nbsp;· Les caméras sur batterie diffusent
+Seule la `1.0.5.0` contient `ALWAYS_ON_VIDEO`.
 
-Elles n'exposent aucun serveur RTSP : sur une HB8C, les 200 premiers ports TCP
-sont filtrés, caméra éveillée. L'URL locale que construit l'amont ne répond
-jamais, et l'entité reste avec `supported_features: 0`.
+### Les caméras sur batterie diffusent
 
-```
-compte EZVIZ  →  session  →  transport VTM  →  vue interne  →  ffmpeg de HA
-```
+Elles n'ouvrent aucun serveur RTSP : sur une HB8C,
+les 200 premiers ports TCP sont filtrés, caméra
+éveillée. L'URL locale de l'amont ne répond jamais.
 
-Aucun jeton à gérer : la session du compte porte tout, et la bibliothèque la
-renouvelle d'elle-même.
+Ce fork ajoute une vue interne qui rend le flux du
+cloud, alimentée par la **session du compte**. Rien
+à renouveler.
 
-> **Les caméras filaires ne sont pas affectées.** Quand un mot de passe RTSP est
-> configuré, le chemin local d'origine reste prioritaire, code amont inchangé.
-> Le cloud n'est qu'un repli.
+> Les caméras filaires ne sont pas touchées. Avec
+> un mot de passe RTSP configuré, le chemin local
+> reste prioritaire, code amont inchangé.
 
----
+## Trois pièges rencontrés
 
-## Trois pièges, et ce qu'ils ont appris
+**`FFmpeg exited with status 234`**
+Le flux est alimenté dès le premier paquet, souvent
+un PES isolé. ffmpeg ne se synchronise que sur un
+pack header `00 00 01 BA`.
 
-| Symptôme | Cause |
-|---|---|
-| `FFmpeg exited with status 234` | le flux est alimenté **dès le premier paquet**, souvent un PES isolé. ffmpeg ne peut se synchroniser qu'à partir d'un pack header `00 00 01 BA`. |
-| `Could not write header` | la caméra annonce une piste audio `mp2` à **0 canaux**. ffmpeg n'en déduit ni taille de trame ni fréquence, refuse le conteneur, et la vidéo tombe avec. On ne remuxe que la vidéo. |
-| Diagnostic impossible | `copy_cloud_stream_to_mpegts` lance ffmpeg avec `stderr=DEVNULL` : il **jette la seule information** qui explique ses échecs. On la capture. |
+**`Could not write header`**
+La caméra annonce une piste audio `mp2` à 0 canaux.
+ffmpeg refuse le conteneur, et la vidéo tombe avec.
+On ne remuxe que la vidéo.
 
----
+**Diagnostic impossible**
+La bibliothèque lance ffmpeg avec `stderr=DEVNULL` :
+elle jette la seule information qui explique ses
+échecs. On la capture.
 
 ## Resynchroniser avec l'amont
 
-Le fork est volontairement minimal : **3 fichiers modifiés sur 21**.
+Le fork est minimal : **3 fichiers modifiés sur 21**.
 
-| Fichier | Nature du diff |
+| Fichier | Diff |
 |---|---|
-| `manifest.json` | version de la bibliothèque, nom, version HACS |
-| `camera.py` | source de flux et instantané en repli cloud |
-| `select.py` | le mode batterie arrive en entier, plus par son nom |
-| `stream_proxy.py` | **nouveau**, autonome |
-| `translations/` | **nouveau** — HA les génère à la compilation, pas dans le dépôt |
+| `manifest.json` | version de la bibliothèque |
+| `camera.py` | flux et instantané en repli |
+| `select.py` | mode batterie rendu en entier |
+| `stream_proxy.py` | nouveau |
+| `translations/` | nouveau |
 
-Pour suivre une version de Home Assistant : recopier les 21 fichiers depuis
-`homeassistant/components/ezviz/`, rejouer ces trois patchs, garder
-`stream_proxy.py` et `translations/`.
-
----
+Pour suivre une version de HA : recopier les 21
+fichiers depuis `homeassistant/components/ezviz/`,
+rejouer les trois patchs, garder `stream_proxy.py`
+et `translations/`.
 
 ## Licence
 
-Le code de `custom_components/ezviz/` provient de Home Assistant, sous licence
-Apache&nbsp;2.0. Voir [`NOTICE`](NOTICE).
+Le code de `custom_components/ezviz/` vient de Home
+Assistant, sous Apache 2.0. Voir [NOTICE](NOTICE).
