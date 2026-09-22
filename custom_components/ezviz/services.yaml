@@ -29,3 +29,27 @@ wake_device:
     entity:
       integration: ezviz
       domain: camera
+
+fetch_messages:
+  fields:
+    serial:
+      example: BH7719633
+      selector:
+        text:
+    subtype:
+      example: "92"
+      default: "92"
+      selector:
+        text:
+    limit:
+      example: 20
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 50
+          mode: box
+    date:
+      example: "20260923"
+      selector:
+        text:

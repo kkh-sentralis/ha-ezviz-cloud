@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import EzvizConfigEntry, EzvizDataUpdateCoordinator
+from .messages import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +96,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EzvizConfigEntry) -> boo
         await coordinator.async_config_entry_first_refresh()
 
         entry.runtime_data = coordinator
+
+        async_register_services(hass)
 
     # Check EZVIZ cloud account entity is present, reload
     # cloud account entities for camera entity change

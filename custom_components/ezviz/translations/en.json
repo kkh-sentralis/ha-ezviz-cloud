@@ -215,6 +215,28 @@
     "wake_device": {
       "description": "Wakes a camera from sleep mode. Especially useful for battery cameras.",
       "name": "Wake camera"
+    },
+    "fetch_messages": {
+      "name": "Fetch device messages",
+      "description": "Returns the raw message list EZVIZ holds for a device, for any message subtype. Useful to discover what a device actually reports.",
+      "fields": {
+        "serial": {
+          "name": "Serial",
+          "description": "Device serial. Leave empty to query every device."
+        },
+        "subtype": {
+          "name": "Subtype",
+          "description": "Message subtype bundle. 92 is the \"All alarm\" set shown in the app; several can be combined, e.g. 92,2701,9904."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Number of messages to return, 1 to 50."
+        },
+        "date": {
+          "name": "Date",
+          "description": "YYYYMMDD to restrict to one day. Leave empty for the most recent."
+        }
+      }
     }
   }
 }
