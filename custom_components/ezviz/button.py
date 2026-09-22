@@ -68,7 +68,11 @@ BUTTON_ENTITIES = (
         method=lambda pyezviz_client, serial, _run: pyezviz_client.flip_image(
             serial
         ),
-        supported_ext=str(SupportExt.SupportPtzCenterMirror.value),
+        # Filtre sur SupportPtz et non SupportPtzCenterMirror : ce dernier n'est
+        # declare par aucune des cameras testees, alors qu'elles savent toutes
+        # se retourner. Une camera motorisee le peut pratiquement toujours ;
+        # si ce n'est pas le cas, l'appel echoue et Home Assistant le signale.
+        supported_ext=str(SupportExt.SupportPtz.value),
     ),
 )
 
