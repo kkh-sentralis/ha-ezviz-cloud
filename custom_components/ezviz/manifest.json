@@ -2,13 +2,13 @@
   "domain": "ezviz",
   "name": "EZVIZ",
   "codeowners": [
-    "@RenierM26"
+    "@kkh-sentralis"
   ],
   "config_flow": true,
   "dependencies": [
     "ffmpeg"
   ],
-  "documentation": "https://www.home-assistant.io/integrations/ezviz",
+  "documentation": "https://github.com/kkh-sentralis/ha-ezviz-cloud",
   "iot_class": "cloud_polling",
   "loggers": [
     "paho_mqtt",
@@ -17,6 +17,6 @@
   "requirements": [
     "pyezvizapi==1.0.5.0"
   ],
-  "version": "1.0.12",
+  "version": "1.0.13",
   "issue_tracker": "https://github.com/kkh-sentralis/ha-ezviz-cloud/issues"
 }

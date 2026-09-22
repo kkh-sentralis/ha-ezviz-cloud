@@ -1,9 +1,12 @@
-EZVIZ Cloud
+EZVIZ pour Home Assistant
 Copyright 2026 Karim AMZOUJ
 
 Ce produit inclut du logiciel developpe par le projet Home Assistant
 (https://github.com/home-assistant/core), sous licence Apache 2.0.
 
-Les fichiers de custom_components/ezviz/ sont derives de
-homeassistant/components/ezviz/ du tag 2026.9.3, a l'exception de
-stream_proxy.py qui est un ajout original.
+Les fichiers de custom_components/ezviz/ derivent de
+homeassistant/components/ezviz/ du tag 2026.9.3, dont l auteur et
+mainteneur est Renier Moorcroft (@RenierM26), egalement auteur de la
+bibliotheque pyezvizapi (https://github.com/RenierM26/pyEzvizApi).
+
+stream_proxy.py et le dossier translations/ sont des ajouts originaux.

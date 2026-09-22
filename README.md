@@ -124,6 +124,14 @@ correctifs, conserver `stream_proxy.py` et
 
 <div align="center">
 <sub>
-Code dérivé de Home Assistant, sous licence Apache 2.0.
+
+Dérivé de l'intégration EZVIZ de Home&nbsp;Assistant,
+créée et maintenue par
+**[@RenierM26](https://github.com/RenierM26)**,
+également auteur de
+[pyezvizapi](https://github.com/RenierM26/pyEzvizApi).
+
+Sous licence Apache&nbsp;2.0.
+
 </sub>
 </div>
