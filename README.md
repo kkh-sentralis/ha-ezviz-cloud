@@ -1,85 +1,106 @@
 # EZVIZ
 
-L'intégration EZVIZ de Home Assistant, avec le flux
-des caméras sur batterie.
+Intégration EZVIZ pour Home Assistant, avec prise en
+charge du flux vidéo des caméras sur batterie.
+
+Elle remplace l'intégration officielle et en conserve
+l'intégralité des fonctions : découverte du compte,
+PTZ, sirène, détection de mouvement, niveau de
+batterie, capteurs et commutateurs.
+
+## Pourquoi
+
+Les caméras EZVIZ sur batterie ne diffusent aucun
+flux RTSP local. L'intégration officielle cherche ce
+flux sur le réseau, ne le trouve pas, et ces caméras
+restent sans image dans Home Assistant.
+
+Par ailleurs, le mode *Always-On Video* empêche
+l'intégration officielle de se configurer : une seule
+caméra dans ce mode suffit à bloquer l'ensemble du
+compte.
+
+Cette intégration corrige les deux points.
+
+## Fonctionnalités
+
+- **Flux vidéo** des caméras sur batterie, via le
+  cloud EZVIZ, sans add-on ni service externe
+- **Instantanés** pour les vignettes et les
+  automatisations
+- **Mode Always-On Video** pris en charge
+- **Caméras filaires** inchangées : le flux RTSP
+  local reste prioritaire
+- **Aucun jeton à gérer** : la session du compte
+  suffit et se renouvelle seule
+
+## Prérequis
+
+- Home Assistant 2026.9 ou supérieur
+- HACS
+- Un compte EZVIZ
 
 ## Installation
 
-1. HACS → dépôt personnalisé, type **Integration**
-2. Télécharger **EZVIZ**, redémarrer
-3. *Paramètres → Ajouter une intégration → EZVIZ*
+**1.** Dans HACS, ajouter ce dépôt en dépôt
+personnalisé, de type *Integration*.
 
-Pas d'add-on. Aucun fichier à créer. Aucun jeton.
+**2.** Télécharger **EZVIZ**, puis redémarrer Home
+Assistant.
 
-## Ce que ce fork corrige
+**3.** Aller dans *Paramètres → Appareils et services
+→ Ajouter une intégration*, choisir **EZVIZ** et
+renseigner son compte.
 
-### L'AOV ne casse plus le compte
+Aucune autre étape n'est requise : ni add-on, ni
+fichier de configuration, ni clé d'API.
 
-Une caméra sur batterie en *Always-On Video*
-renvoie le mode `7`, absent de l'énumération de la
-version épinglée. L'intégration lève, et **aucune**
-caméra du compte ne se configure.
+## Configuration
 
-Le correctif existe en amont, mais Home Assistant
-épingle une version obsolète — y compris sur `dev` :
+L'intégration ne demande que les identifiants du
+compte EZVIZ et la région correspondante.
 
-| Source | Version |
+Le flux vidéo est sélectionné automatiquement :
+
+| Caméra | Source du flux |
 |---|---|
-| HA 2026.9.3 | `1.0.0.7` |
-| HA `dev` | `1.0.0.7` |
-| PyPI | **`1.0.5.0`** |
+| Filaire, RTSP configuré | RTSP local |
+| Sur batterie | Cloud EZVIZ |
 
-Seule la `1.0.5.0` contient `ALWAYS_ON_VIDEO`.
+## Compatibilité
 
-### Les caméras sur batterie diffusent
+Testée sur EZVIZ HB8C. Les autres modèles sur
+batterie suivent le même protocole et devraient
+fonctionner à l'identique.
 
-Elles n'ouvrent aucun serveur RTSP : sur une HB8C,
-les 200 premiers ports TCP sont filtrés, caméra
-éveillée. L'URL locale de l'amont ne répond jamais.
+Les caméras filaires conservent le comportement de
+l'intégration officielle, dont le code est repris
+sans modification sur ce point.
 
-Ce fork ajoute une vue interne qui rend le flux du
-cloud, alimentée par la **session du compte**. Rien
-à renouveler.
+## Dépannage
 
-> Les caméras filaires ne sont pas touchées. Avec
-> un mot de passe RTSP configuré, le chemin local
-> reste prioritaire, code amont inchangé.
+Les traces détaillées s'activent en ajoutant à
+`configuration.yaml` :
 
-## Trois pièges rencontrés
+```yaml
+logger:
+  logs:
+    custom_components.ezviz: debug
+```
 
-**`FFmpeg exited with status 234`**
-Le flux est alimenté dès le premier paquet, souvent
-un PES isolé. ffmpeg ne se synchronise que sur un
-pack header `00 00 01 BA`.
+Le journal indique alors le format détecté pour
+chaque flux ainsi que la sortie de ffmpeg.
 
-**`Could not write header`**
-La caméra annonce une piste audio `mp2` à 0 canaux.
-ffmpeg refuse le conteneur, et la vidéo tombe avec.
-On ne remuxe que la vidéo.
+## Mise à jour depuis l'amont
 
-**Diagnostic impossible**
-La bibliothèque lance ffmpeg avec `stderr=DEVNULL` :
-elle jette la seule information qui explique ses
-échecs. On la capture.
-
-## Resynchroniser avec l'amont
-
-Le fork est minimal : **3 fichiers modifiés sur 21**.
-
-| Fichier | Diff |
-|---|---|
-| `manifest.json` | version de la bibliothèque |
-| `camera.py` | flux et instantané en repli |
-| `select.py` | mode batterie rendu en entier |
-| `stream_proxy.py` | nouveau |
-| `translations/` | nouveau |
-
-Pour suivre une version de HA : recopier les 21
-fichiers depuis `homeassistant/components/ezviz/`,
-rejouer les trois patchs, garder `stream_proxy.py`
-et `translations/`.
+Cette intégration suit le code officiel de Home
+Assistant et n'en modifie que trois fichiers. Pour
+l'aligner sur une nouvelle version : reprendre le
+dossier `homeassistant/components/ezviz/`, rejouer
+les correctifs, et conserver `stream_proxy.py` ainsi
+que `translations/`.
 
 ## Licence
 
-Le code de `custom_components/ezviz/` vient de Home
-Assistant, sous Apache 2.0. Voir [NOTICE](NOTICE).
+Code dérivé de Home Assistant, distribué sous licence
+Apache 2.0. Voir [NOTICE](NOTICE).
