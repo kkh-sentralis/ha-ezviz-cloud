@@ -64,14 +64,33 @@ Ni add-on, ni fichier de configuration, ni clé d'API.
 
 ## Configuration
 
-L'intégration ne demande que les identifiants du
-compte et sa région. La source du flux est ensuite
-choisie automatiquement :
+L'intégration demande les identifiants du compte
+EZVIZ et sa région.
+
+### Flux des caméras sur batterie
+
+Ces caméras n'ont pas de RTSP local : leur flux passe
+par l'Open Platform d'EZVIZ, qui demande une clé
+applicative.
+
+Sur [open.ezviz.com](https://open.ezviz.com), créer
+une application et relever **AppKey** et
+**AppSecret**. Les renseigner ensuite dans les
+options de l'intégration.
+
+Ces deux valeurs sont **permanentes**. Le jeton
+qu'elles produisent expire au bout de sept jours,
+mais il est renouvelé automatiquement : rien à
+refaire.
+
+### Source du flux
 
 | Caméra | Source |
 |---|---|
 | Filaire, RTSP configuré | RTSP local |
 | Sur batterie | Cloud EZVIZ |
+
+Le choix est automatique, caméra par caméra.
 
 <details>
 <summary><b>Compatibilité</b></summary>

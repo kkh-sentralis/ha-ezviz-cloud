@@ -32,6 +32,10 @@ from homeassistant.const import (
 from homeassistant.core import callback
 
 from .const import (
+    CONF_APP_KEY,
+    CONF_APP_SECRET,
+    CONF_OPEN_HOST,
+    DEFAULT_OPEN_HOST,
     ATTR_SERIAL,
     ATTR_TYPE_CAMERA,
     ATTR_TYPE_CLOUD,
@@ -411,6 +415,24 @@ class EzvizOptionsFlowHandler(OptionsFlowWithReload):
                     CONF_FFMPEG_ARGUMENTS,
                     default=self.config_entry.options.get(
                         CONF_FFMPEG_ARGUMENTS, DEFAULT_FFMPEG_ARGUMENTS
+                    ),
+                ): str,
+                # Identifiants Open Platform : ils debloquent le flux des
+                # cameras sur batterie, qui n'ont pas de RTSP local. Ils sont
+                # permanents -- seul le jeton derive expire, et il se renouvelle
+                # tout seul.
+                vol.Optional(
+                    CONF_APP_KEY,
+                    default=self.config_entry.options.get(CONF_APP_KEY, ""),
+                ): str,
+                vol.Optional(
+                    CONF_APP_SECRET,
+                    default=self.config_entry.options.get(CONF_APP_SECRET, ""),
+                ): str,
+                vol.Optional(
+                    CONF_OPEN_HOST,
+                    default=self.config_entry.options.get(
+                        CONF_OPEN_HOST, DEFAULT_OPEN_HOST
                     ),
                 ): str,
             }

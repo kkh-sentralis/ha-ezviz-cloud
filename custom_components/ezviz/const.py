@@ -6,6 +6,14 @@ MANUFACTURER = "EZVIZ"
 # Configuration
 ATTR_SERIAL = "serial"
 CONF_FFMPEG_ARGUMENTS = "ffmpeg_arguments"
+
+# Identifiants Open Platform, necessaires au flux des cameras sur batterie.
+# Ils ne periment pas : c'est le jeton derive qui expire, et il se renouvelle
+# seul. Voir stream_proxy.
+CONF_APP_KEY = "app_key"
+CONF_APP_SECRET = "app_secret"
+CONF_OPEN_HOST = "open_host"
+DEFAULT_OPEN_HOST = "ieuopen.ezvizlife.com"
 ATTR_TYPE_CLOUD = "EZVIZ_CLOUD_ACCOUNT"
 ATTR_TYPE_CAMERA = "CAMERA_ACCOUNT"
 CONF_SESSION_ID = "session_id"

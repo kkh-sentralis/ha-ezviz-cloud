@@ -24,9 +24,13 @@ import re
 import socket
 import ssl
 import struct
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from threading import Lock
+import time
+from urllib.parse import urlencode, urlsplit
+from urllib.request import Request, urlopen
 from datetime import timedelta
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
@@ -41,6 +45,13 @@ if TYPE_CHECKING:
     from .coordinator import EzvizDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# L'API Open Platform exige un agent de navigateur pour resoudre une adresse
+# ezopen : sans lui, elle refuse la demande.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+)
 
 STREAM_URL = "/api/ezviz_cloud_stream/{serial}"
 STREAM_VIEW_NAME = "api:ezviz_cloud_stream"
@@ -77,15 +88,6 @@ _WORKING_CODEC: dict[str, int] = {}
 # Delai laisse a la camera pour commencer a diffuser apres son reveil.
 WAKE_SETTLE = 3.0
 
-# ⛔ TRANSPORT WEBSOCKET, ET NON TCP.
-#
-# Mesure du 2026-09-22 : le transport TCP de la bibliotheque ne livre qu'UNE
-# IMAGE PAR SECONDE -- verifie sans transcodage, l'encodeur hors de cause. Le
-# WebSocket, sur le meme serveur et avec le meme jeton de session, rend
-# 2,2 Mbps de H.265 propre. C'est le meme point d'entree, pas le meme tuyau.
-#
-# Le port du WebSocket differe de celui de ysproto ; on essaie le connu d'abord.
-WEBSOCKET_PORTS = (20006, 8666)
 
 # Entete proprietaire precedant les paquets RTP.
 IMKH_HEADER = b"IMKH"
@@ -198,6 +200,95 @@ def _websocket_url(stream_url: str, port: int) -> str:
     return urlunsplit(
         ("wss", f"{parts.hostname}:{port}", parts.path, urlencode(params), "")
     )
+
+
+class _OpenPlatformToken:
+    """Jeton Open Platform, renouvele tout seul.
+
+    L'AppKey et l'AppSecret ne periment pas ; le jeton qu'ils produisent vaut
+    sept jours. On le garde en cache et on le redemande des qu'il approche de
+    son terme, ou des que le serveur le refuse. L'utilisateur saisit ses
+    identifiants une fois et n'y revient jamais.
+    """
+
+    # Marge avant le terme : on renouvelle sans attendre le refus.
+    RENEW_BEFORE = 3600.0
+
+    def __init__(self) -> None:
+        self._value: str | None = None
+        self._expires_at = 0.0
+        self._lock = Lock()
+
+    def get(self, host: str, app_key: str, app_secret: str, *, force: bool = False) -> str:
+        """Rendre un jeton valide, en le renouvelant si besoin."""
+        with self._lock:
+            now = time.time()
+            if not force and self._value and now < self._expires_at - self.RENEW_BEFORE:
+                return self._value
+            body = urlencode({"appKey": app_key, "appSecret": app_secret}).encode()
+            request = Request(
+                f"https://{host}/api/lapp/token/get",
+                data=body,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            with urlopen(request, timeout=20) as response:  # noqa: S310
+                answer = json.loads(response.read())
+            if answer.get("code") != "200":
+                raise PyEzvizError(
+                    f"jeton Open Platform refuse : {answer.get('code')} "
+                    f"{answer.get('msg')}"
+                )
+            data = answer["data"]
+            self._value = str(data["accessToken"])
+            # expireTime est en millisecondes.
+            self._expires_at = float(data.get("expireTime", 0)) / 1000
+            _LOGGER.debug(
+                "EZVIZ : jeton Open Platform renouvele, valable jusqu'au %s",
+                time.strftime("%Y-%m-%d", time.localtime(self._expires_at)),
+            )
+            return self._value
+
+
+_TOKEN = _OpenPlatformToken()
+
+
+def _resolve_ezopen(host: str, token: str, serial: str, channel: int = 1) -> tuple[str, str]:
+    """Adresse ezopen:// -> (url wss, jeton de session).
+
+    ⚠ multipart obligatoire : en urlencode, l'API repond « parametre vide ».
+    """
+    boundary = uuid.uuid4().hex
+    fields = {
+        "accessToken": token,
+        "ezopen": f"ezopen://open.ezviz.com/{serial}/{channel}.hd.live",
+        "isFlv": "false",
+        "isHttp": "false",
+        "userAgent": BROWSER_USER_AGENT,
+    }
+    body = b"".join(
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n"
+        ).encode()
+        for name, value in fields.items()
+    ) + f"--{boundary}--\r\n".encode()
+
+    request = Request(
+        f"https://{host}/api/lapp/live/url/ezopen",
+        data=body,
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": BROWSER_USER_AGENT,
+        },
+    )
+    with urlopen(request, timeout=25) as response:  # noqa: S310
+        answer = json.loads(response.read())
+    if answer.get("code") != "200":
+        raise PyEzvizError(
+            f"resolution ezopen refusee : {answer.get('code')} {answer.get('msg')}"
+        )
+    return str(answer["data"]["url"]), str(answer["data"]["token"])
 
 
 class _WebSocket:
@@ -334,9 +425,30 @@ class EzvizCloudStreamView(HomeAssistantView):
 
     async def get(self, request: web.Request, serial: str) -> web.StreamResponse:
         """Diffuser le flux de la camera demandee."""
-        client = _find_client(self.hass, serial)
-        if client is None:
+        from .const import (  # noqa: PLC0415 - import tardif, cycle sinon
+            CONF_APP_KEY,
+            CONF_APP_SECRET,
+            CONF_OPEN_HOST,
+            DEFAULT_OPEN_HOST,
+        )
+
+        found = _find_account(self.hass, serial)
+        if found is None:
             raise web.HTTPNotFound(text=f"Unknown EZVIZ camera {serial}")
+        client, options = found
+
+        app_key = options.get(CONF_APP_KEY, "")
+        app_secret = options.get(CONF_APP_SECRET, "")
+        open_host = options.get(CONF_OPEN_HOST) or DEFAULT_OPEN_HOST
+        if not app_key or not app_secret:
+            _LOGGER.warning(
+                "EZVIZ %s : flux indisponible, AppKey et AppSecret non "
+                "renseignes dans les options de l'integration",
+                serial,
+            )
+            raise web.HTTPServiceUnavailable(
+                text="EZVIZ Open Platform credentials are not configured"
+            )
 
         response = web.StreamResponse(headers={"Content-Type": "video/mp2t"})
         await response.prepare(request)
@@ -357,10 +469,6 @@ class EzvizCloudStreamView(HomeAssistantView):
             import time  # noqa: PLC0415
             from threading import Thread  # noqa: PLC0415
 
-            from pyezvizapi.cloud_stream import (  # noqa: PLC0415
-                get_cloud_stream_info,
-            )
-
             remux: subprocess.Popen[bytes] | None = None
             websocket: _WebSocket | None = None
             try:
@@ -372,32 +480,20 @@ class EzvizCloudStreamView(HomeAssistantView):
                     client.get_detection_sensibility(serial)
                     time.sleep(WAKE_SETTLE)
 
-                # refresh_vtm=True : sans lui, la liste des serveurs VTM n'est
-                # pas rechargee et la resolution echoue sur « Could not find VTM
-                # server ». open_cloud_stream le passe par defaut ; en appelant
-                # get_cloud_stream_info directement, on herite du False.
-                info = get_cloud_stream_info(client, serial, channel=1, refresh_vtm=True)
-                # Le jeton est masque : cette ligne part dans le journal.
-                _LOGGER.warning(
-                    "EZVIZ %s : url VTM %s",
-                    serial,
-                    re.sub(r"ssn=[^&]*", "ssn=***", str(info["stream_url"])),
+                token = _TOKEN.get(open_host, app_key, app_secret)
+                try:
+                    url, session = _resolve_ezopen(open_host, token, serial)
+                except PyEzvizError:
+                    # Jeton expire ou revoque : on en redemande un et on reessaie
+                    # UNE fois. C'est tout ce que l'utilisateur aura a faire --
+                    # c'est-a-dire rien.
+                    token = _TOKEN.get(open_host, app_key, app_secret, force=True)
+                    url, session = _resolve_ezopen(open_host, token, serial)
+
+                full = f"{url}&ssn={session}&auth=1&biz=4&cln=100"
+                websocket = _WebSocket(
+                    full, origin=f"https://{open_host}"
                 )
-                origin = f"https://{urlsplit(str(info['stream_url'])).hostname}"
-                for port in WEBSOCKET_PORTS:
-                    url = _websocket_url(str(info["stream_url"]), port)
-                    try:
-                        websocket = _WebSocket(url, origin=origin)
-                        break
-                    except (OSError, ConnectionError) as err:
-                        _LOGGER.warning(
-                            "EZVIZ %s : %s:%s refuse -> %s: %s",
-                            serial, urlsplit(url).hostname, port,
-                            type(err).__name__, str(err)[:120],
-                        )
-                if websocket is None:
-                    _LOGGER.warning("EZVIZ %s : aucun port WebSocket ouvert", serial)
-                    return False
 
                 remux = subprocess.Popen(  # noqa: S603
                     [
@@ -514,8 +610,8 @@ class EzvizCloudStreamView(HomeAssistantView):
 
 
 @callback
-def _find_client(hass: HomeAssistant, serial: str) -> Any | None:
-    """Retrouver le client EZVIZ qui connait ce numero de serie."""
+def _find_account(hass: HomeAssistant, serial: str) -> tuple[Any, Mapping[str, Any]] | None:
+    """Retrouver le client EZVIZ et les options du compte qui gere ce serie."""
     from .const import DOMAIN  # noqa: PLC0415 - import tardif, cycle sinon
 
     for entry in hass.config_entries.async_entries(DOMAIN):
@@ -523,7 +619,7 @@ def _find_client(hass: HomeAssistant, serial: str) -> Any | None:
             entry, "runtime_data", None
         )
         if coordinator is not None and serial in (coordinator.data or {}):
-            return coordinator.ezviz_client
+            return coordinator.ezviz_client, entry.options
     return None
 
 

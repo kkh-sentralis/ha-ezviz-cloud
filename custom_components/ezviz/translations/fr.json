@@ -188,7 +188,10 @@
       "init": {
         "data": {
           "ffmpeg_arguments": "Arguments passed to FFmpeg for cameras",
-          "timeout": "Request timeout (seconds)"
+          "timeout": "Request timeout (seconds)",
+          "app_key": "AppKey Open Platform EZVIZ",
+          "app_secret": "AppSecret Open Platform EZVIZ",
+          "open_host": "Hôte de région Open Platform"
         }
       }
     }
