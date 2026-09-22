@@ -132,8 +132,8 @@ def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
     """
     if not width:
         return (
-            (["-c:v", "copy", "-c:a", "aac", "-ac", "1", "-ar", "16000"], "copie avec audio"),
             (["-c:v", "copy", "-an"], "copie sans audio"),
+            (["-c:v", "copy", "-c:a", "aac", "-ac", "1", "-ar", "16000"], "copie avec audio"),
         )
     video = [
         # La cadence constante a ete essayee (1.3.1) et RETIREE : elle duplique
@@ -144,9 +144,23 @@ def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
         "-b:v", "2M",
     ]
     video = ["-vf", f"scale={width}:-2", *video]
+    # ⛔ SANS AUDIO EN PREMIER, ET CE N'EST PAS UN DETAIL.
+    #
+    # Ces cameras annoncent une piste mp2 a « 0 canaux » : la tentative avec le
+    # son echoue presque toujours, et il faut HUIT SECONDES pour s'en rendre
+    # compte. Pire, cette tentative perdue consomme une session WebSocket
+    # aupres d'EZVIZ ; la suivante en ouvre une seconde, et le cloud la sert
+    # nettement moins bien.
+    #
+    # Mesure comparative avec un montage n'ouvrant qu'UNE session :
+    #   une session   1re image 4,7 s   1,50 Mbps
+    #   deux sessions 1re image 9,3 s   0,15 Mbps
+    #
+    # Le son passe donc en second : qui l'a le decouvre au deuxieme essai, et
+    # la memorisation par camera fait que ce n'est paye qu'une fois.
     return (
-        ([*video, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
         ([*video, "-an"], "sans audio"),
+        ([*video, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
     )
 
 
