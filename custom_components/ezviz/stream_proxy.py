@@ -81,8 +81,16 @@ SYNC_SEARCH_LIMIT = 200
 # Un transcodage unique en H.264 720p coute au Pi, mais rend un flux que TOUT
 # navigateur lit nativement. C'est ce que faisait le montage go2rtc manuel,
 # et c'est pourquoi LUI etait fluide.
+# Hauteur cible du transcodage. Le Pi 5 n'a pas d'encodeur H.264 materiel :
+# libx264 tourne en logiciel, et le cout suit le nombre de pixels.
+#   720p  0,9 Mpx   confortable
+#   1080p 2,1 Mpx   tient sans effort en ultrafast
+#   1440p 3,7 Mpx   a la limite -- et un encodeur en retard ne ralentit pas,
+#                   il PERD des images, ce qui saccade
+TARGET_WIDTH = 1920
+
 VIDEO_ARGS = [
-    "-vf", "scale=1280:-2",
+    "-vf", f"scale={TARGET_WIDTH}:-2",
     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
     "-g", "30",          # une image cle par seconde : demarrage rapide
     "-b:v", "2M",
