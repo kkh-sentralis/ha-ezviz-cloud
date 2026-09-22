@@ -37,15 +37,26 @@ _LOGGER = logging.getLogger(__name__)
 STREAM_OVERRIDES_FILE = "ezviz_stream_overrides.json"
 
 
+DEFAULT_OVERRIDE_KEY = "default"
+
+
 def _load_stream_overrides(config_dir: str) -> dict[str, str]:
-    """Lit les sources de flux surchargees, par numero de serie.
+    """Lit les sources de flux surchargees.
 
     Les cameras sur batterie (HB8C et consorts) n'exposent AUCUN serveur RTSP :
     l'URL locale que construit l'amont ne repond jamais, et la camera reste
     sans flux. Ce fichier permet de pointer une source qui, elle, fonctionne --
     typiquement un flux go2rtc alimente par le WebSocket du cloud EZVIZ.
 
-        {"BH0697892": "rtsp://192.168.1.65:8554/ezviz_hb8c"}
+    La cle `default` porte un gabarit qui vaut pour TOUTES les cameras, y
+    compris celles que le compte decouvrira plus tard ; `{serial}` y est
+    remplace par le numero de serie. Une cle nommee explicitement surcharge le
+    gabarit pour cette camera-la.
+
+        {
+          "default": "rtsp://192.168.1.65:8554/ezviz_{serial}",
+          "BH0697892": "rtsp://192.168.1.65:8554/jardin"
+        }
 
     Choix assume : un fichier plutot qu'une option de config_flow, pour que le
     diff avec l'amont reste minuscule et la resynchronisation triviale.
@@ -61,6 +72,14 @@ def _load_stream_overrides(config_dir: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in data.items() if v}
 
 
+def _stream_source_for(overrides: dict[str, str], serial: str) -> str | None:
+    """Source surchargee pour une camera : la sienne, sinon le gabarit."""
+    if serial in overrides:
+        return overrides[serial]
+    template = overrides.get(DEFAULT_OVERRIDE_KEY)
+    return template.format(serial=serial) if template else None
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: EzvizConfigEntry,
@@ -74,7 +93,7 @@ async def async_setup_entry(
         _load_stream_overrides, hass.config.config_dir
     )
     if overrides:
-        _LOGGER.info("EZVIZ stream overrides loaded for: %s", ", ".join(overrides))
+        _LOGGER.info("EZVIZ stream overrides loaded: %s", ", ".join(overrides))
 
     camera_entities = []
 
@@ -133,7 +152,7 @@ async def async_setup_entry(
                 camera_rtsp_stream,
                 value["local_rtsp_port"],
                 ffmpeg_arguments,
-                overrides.get(camera),
+                _stream_source_for(overrides, camera),
             )
         )
 

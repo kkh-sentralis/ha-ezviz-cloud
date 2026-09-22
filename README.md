@@ -36,11 +36,24 @@ Créer `/config/ezviz_stream_overrides.json` :
 
 ```json
 {
-  "BH0697892": "rtsp://192.168.1.65:8554/ezviz_hb8c"
+  "default": "rtsp://192.168.1.65:8554/ezviz_{serial}"
 }
 ```
 
-La clé est le numéro de série, la valeur une source que ffmpeg sait ouvrir.
+La clé `default` est un **gabarit qui vaut pour toutes les caméras** — y compris
+celles que la découverte du compte ajoutera plus tard. `{serial}` y est remplacé
+par le numéro de série.
+
+Pour traiter une caméra à part, la nommer explicitement :
+
+```json
+{
+  "default": "rtsp://192.168.1.65:8554/ezviz_{serial}",
+  "BH0697892": "rtsp://192.168.1.65:8554/jardin"
+}
+```
+
+Sans ce fichier, le comportement est **identique à l'intégration officielle**.
 La caméra obtient alors le drapeau `STREAM`, et le flux apparaît **sur la page
 de son appareil**, à côté du PTZ et de la batterie.
 
