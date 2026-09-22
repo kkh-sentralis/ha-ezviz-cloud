@@ -1,5 +1,6 @@
 """Support ezviz camera devices."""
 
+import io
 import logging
 from typing import override
 
