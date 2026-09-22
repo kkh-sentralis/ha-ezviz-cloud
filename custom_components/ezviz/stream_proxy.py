@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from contextlib import suppress
 import os
 import re
@@ -26,6 +27,7 @@ import ssl
 import struct
 from threading import Lock
 import time
+import uuid
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from datetime import timedelta
