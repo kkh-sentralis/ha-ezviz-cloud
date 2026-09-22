@@ -63,15 +63,16 @@ device_factory.py  feature.py  hcnetsdk.py  smart_plug.py
 | 3 | Chaîne go2rtc + transcodage H.264 | ✅ fait, ~2 s de latence |
 | 4 | Caméra générique dans HA | ✅ fait |
 | 5 | **Comparer l'API 1.0.0.7 vs 1.0.5.0** | ✅ **compatible à 100 %** |
-| 6 | Évaluer `cloud_stream.py` : remplace-t-il `ws_bridge.py` ? | ⬜ |
+| 6 | `cloud_stream.py` remplace-t-il `ws_bridge.py` ? | ✅ **OUI — session du compte, pas de jeton** |
 | 7 | Copier l'intégration dans `custom_components/ezviz/` | ✅ 21 fichiers |
 | 8 | `manifest.json` → `pyezvizapi==1.0.5.0` | ✅ + version HACS |
 | 9 | ~~Adapter le code aux changements d'API~~ | ✅ **inutile** |
 | 10 | Surcharge de flux dans `camera.py` | ✅ 48 lignes |
-| 10b | Publier sur GitHub + installer par HACS | 🔄 EN ATTENTE DE TON FEU VERT |
+| 10b | Vue interne `stream_proxy.py`, plus d'add-on ni de fichiers | ✅ |
+| 10c | Publier sur GitHub + installer par HACS | 🔄 EN ATTENTE DU FEU VERT |
 | 11 | Réactiver l'AOV et vérifier que ça tient | ⬜ |
 | 12 | Supprimer la caméra générique devenue inutile | ⬜ |
-| 13 | Renouvellement automatique du jeton | ⬜ |
+| 13 | ~~Renouvellement automatique du jeton~~ | ✅ **sans objet** |
 
 ## Le fork : périmètre
 

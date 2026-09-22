@@ -1,6 +1,6 @@
 {
   "domain": "ezviz",
-  "name": "EZVIZ",
+  "name": "EZVIZ Cloud",
   "codeowners": [
     "@RenierM26"
   ],
@@ -18,5 +18,5 @@
     "pyezvizapi==1.0.5.0"
   ],
   "version": "1.0.0",
-  "issue_tracker": "https://github.com/kkh-sentralis/ha-ezviz-nairobi/issues"
+  "issue_tracker": "https://github.com/kkh-sentralis/ha-ezviz-cloud/issues"
 }

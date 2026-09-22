@@ -1,8 +1,6 @@
 """Support ezviz camera devices."""
 
-import json
 import logging
-from pathlib import Path
 from typing import override
 
 from pyezvizapi.exceptions import HTTPError, InvalidHost, PyEzvizError
@@ -30,54 +28,9 @@ from .const import (
 )
 from .coordinator import EzvizConfigEntry, EzvizDataUpdateCoordinator
 from .entity import EzvizEntity
+from .stream_proxy import async_register_stream_view, async_stream_url
 
 _LOGGER = logging.getLogger(__name__)
-
-
-STREAM_OVERRIDES_FILE = "ezviz_stream_overrides.json"
-
-
-DEFAULT_OVERRIDE_KEY = "default"
-
-
-def _load_stream_overrides(config_dir: str) -> dict[str, str]:
-    """Lit les sources de flux surchargees.
-
-    Les cameras sur batterie (HB8C et consorts) n'exposent AUCUN serveur RTSP :
-    l'URL locale que construit l'amont ne repond jamais, et la camera reste
-    sans flux. Ce fichier permet de pointer une source qui, elle, fonctionne --
-    typiquement un flux go2rtc alimente par le WebSocket du cloud EZVIZ.
-
-    La cle `default` porte un gabarit qui vaut pour TOUTES les cameras, y
-    compris celles que le compte decouvrira plus tard ; `{serial}` y est
-    remplace par le numero de serie. Une cle nommee explicitement surcharge le
-    gabarit pour cette camera-la.
-
-        {
-          "default": "rtsp://192.168.1.65:8554/ezviz_{serial}",
-          "BH0697892": "rtsp://192.168.1.65:8554/jardin"
-        }
-
-    Choix assume : un fichier plutot qu'une option de config_flow, pour que le
-    diff avec l'amont reste minuscule et la resynchronisation triviale.
-    """
-    path = Path(config_dir) / STREAM_OVERRIDES_FILE
-    if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        _LOGGER.exception("Cannot read %s, stream overrides ignored", path)
-        return {}
-    return {str(k): str(v) for k, v in data.items() if v}
-
-
-def _stream_source_for(overrides: dict[str, str], serial: str) -> str | None:
-    """Source surchargee pour une camera : la sienne, sinon le gabarit."""
-    if serial in overrides:
-        return overrides[serial]
-    template = overrides.get(DEFAULT_OVERRIDE_KEY)
-    return template.format(serial=serial) if template else None
 
 
 async def async_setup_entry(
@@ -89,11 +42,8 @@ async def async_setup_entry(
 
     coordinator = entry.runtime_data
 
-    overrides = await hass.async_add_executor_job(
-        _load_stream_overrides, hass.config.config_dir
-    )
-    if overrides:
-        _LOGGER.info("EZVIZ stream overrides loaded: %s", ", ".join(overrides))
+    # Le flux passe par une vue HTTP interne : aucun add-on, aucun fichier.
+    async_register_stream_view(hass)
 
     camera_entities = []
 
@@ -152,7 +102,6 @@ async def async_setup_entry(
                 camera_rtsp_stream,
                 value["local_rtsp_port"],
                 ffmpeg_arguments,
-                _stream_source_for(overrides, camera),
             )
         )
 
@@ -180,7 +129,6 @@ class EzvizCamera(EzvizEntity, Camera):
         camera_rtsp_stream: str | None,
         local_rtsp_port: int,
         ffmpeg_arguments: str | None,
-        stream_override: str | None = None,
     ) -> None:
         """Initialize a EZVIZ security camera."""
         super().__init__(coordinator, serial)
@@ -193,11 +141,10 @@ class EzvizCamera(EzvizEntity, Camera):
         self._ffmpeg_arguments = ffmpeg_arguments
         self._ffmpeg = get_ffmpeg_manager(hass)
         self._attr_unique_id = serial
-        self._stream_override = stream_override
-        # Une camera sans mot de passe local n'a pas de RTSP -- mais une source
-        # surchargee, elle, diffuse : elle merite le drapeau STREAM.
-        if camera_password or stream_override:
-            self._attr_supported_features = CameraEntityFeature.STREAM
+        # Le flux cloud fonctionne pour TOUTE camera du compte, y compris les
+        # modeles sur batterie qui n'ouvrent aucun port : la camera merite donc
+        # le drapeau STREAM meme sans mot de passe RTSP local.
+        self._attr_supported_features = CameraEntityFeature.STREAM
 
     @property
     @override
@@ -240,23 +187,24 @@ class EzvizCamera(EzvizEntity, Camera):
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Return a frame from the camera stream."""
-        if self._stream_override:
-            return await ffmpeg.async_get_image(
-                self.hass, self._stream_override, width=width, height=height
-            )
-        if self._rtsp_stream is None:
+        source = self._rtsp_stream or await self.stream_source()
+        if source is None:
             return None
         return await ffmpeg.async_get_image(
-            self.hass, self._rtsp_stream, width=width, height=height
+            self.hass, source, width=width, height=height
         )
 
     @override
     async def stream_source(self) -> str | None:
-        """Return the stream source."""
-        if self._stream_override:
-            return self._stream_override
+        """Return the stream source.
+
+        Le RTSP local reste prioritaire quand il est configure : il evite un
+        aller-retour par le cloud. Sans mot de passe local -- le cas de toutes
+        les cameras sur batterie -- on passe par le flux cloud.
+        """
         if self._password is None:
-            return None
+            self._rtsp_stream = async_stream_url(self.hass, self._serial)
+            return self._rtsp_stream
         local_ip = self.data["local_ip"]
         self._rtsp_stream = (
             f"rtsp://{self._username}:{self._password}@"

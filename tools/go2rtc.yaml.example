@@ -1,2 +1,0 @@
-streams:
-  ezviz_hb8c: exec:/bin/sh /config/ezviz_stream.sh {output}
