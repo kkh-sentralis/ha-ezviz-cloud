@@ -53,3 +53,11 @@ fetch_messages:
       example: "20260923"
       selector:
         text:
+
+fetch_device_info:
+  fields:
+    serial:
+      required: true
+      example: BH7719633
+      selector:
+        text:

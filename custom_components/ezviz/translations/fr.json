@@ -237,6 +237,16 @@
           "description": "AAAAMMJJ pour se limiter à un jour. Vide pour les plus récents."
         }
       }
+    },
+    "fetch_device_info": {
+      "name": "Lire les capacités d'un appareil",
+      "description": "Rend les capacités de verrouillage déclarées par un appareil, et les identifiants qui y sont enrôlés.",
+      "fields": {
+        "serial": {
+          "name": "Numéro de série",
+          "description": "Série de l'appareil à examiner."
+        }
+      }
     }
   }
 }

@@ -237,6 +237,16 @@
           "description": "YYYYMMDD to restrict to one day. Leave empty for the most recent."
         }
       }
+    },
+    "fetch_device_info": {
+      "name": "Fetch device capabilities",
+      "description": "Returns the lock-related capabilities a device declares, and the credentials enrolled on it.",
+      "fields": {
+        "serial": {
+          "name": "Serial",
+          "description": "Device serial to inspect."
+        }
+      }
     }
   }
 }
