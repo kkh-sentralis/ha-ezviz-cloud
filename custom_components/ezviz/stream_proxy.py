@@ -120,7 +120,23 @@ IMKH_HEADER = b"IMKH"
 # la VIDEO -- parfaitement valide -- tombe avec elle. On retente alors sans le
 # son : mieux vaut une image muette que pas d'image.
 def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
-    """Les deux tentatives, pour une largeur de transcodage donnee."""
+    """Les deux tentatives, pour une largeur de transcodage donnee.
+
+    ⛔ LE TRANSCODAGE EST LE GOULET, PAS LE TRANSPORT.
+    #
+    Mesure du 2026-09-22, meme source WebSocket :
+        sans transcodage   29,9 images/s
+        transcode en 1080p  6 a 9 images/s
+    Le Pi doit decoder du H.265 2560x1440 puis reencoder en H.264, les deux en
+    logiciel. Une largeur NULLE laisse donc passer le flux tel quel : cout
+    processeur nul, cadence pleine, au prix d'un HEVC que tous les navigateurs
+    ne lisent pas aussi bien.
+    """
+    if not width:
+        return (
+            (["-c:v", "copy", "-c:a", "aac", "-ac", "1", "-ar", "16000"], "copie avec audio"),
+            (["-c:v", "copy", "-an"], "copie sans audio"),
+        )
     video = [
         # La cadence constante a ete essayee (1.3.1) et RETIREE : elle duplique
         # des images sans rien lisser, puisque le decalage ne vient pas de
@@ -129,8 +145,7 @@ def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
         "-g", "30",
         "-b:v", "2M",
     ]
-    if width:
-        video = ["-vf", f"scale={width}:-2", *video]
+    video = ["-vf", f"scale={width}:-2", *video]
     return (
         ([*video, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
         ([*video, "-an"], "sans audio"),

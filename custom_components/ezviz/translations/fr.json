@@ -192,7 +192,7 @@
           "app_key": "AppKey Open Platform EZVIZ",
           "app_secret": "AppSecret Open Platform EZVIZ",
           "open_host": "Hôte de région Open Platform",
-          "stream_width": "Largeur du flux en pixels (0 = native)"
+          "stream_width": "Largeur du flux (0 = aucun transcodage)"
         }
       }
     }

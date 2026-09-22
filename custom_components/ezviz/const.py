@@ -19,10 +19,11 @@ DEFAULT_OPEN_HOST = "ieuopen.ezvizlife.com"
 # suit le nombre de pixels, et un encodeur en retard ne ralentit pas -- il PERD
 # des images. Reglable, parce que le bon compromis depend de la machine et du
 # nombre de cameras ouvertes en meme temps.
-#   1280  720p   le plus fluide
+#      0  AUCUN transcodage : le flux passe tel quel, cout processeur nul et
+#         cadence pleine, mais en H.265 que tous les navigateurs ne lisent pas
+#   1280  720p   le plus fluide des modes transcodes
 #   1920  1080p  defaut
 #   2560  1440p  a reserver aux machines confortables
-#      0        pas de redimensionnement, resolution native
 CONF_STREAM_WIDTH = "stream_width"
 DEFAULT_STREAM_WIDTH = 1920
 ATTR_TYPE_CLOUD = "EZVIZ_CLOUD_ACCOUNT"
