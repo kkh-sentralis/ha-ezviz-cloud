@@ -68,6 +68,9 @@ FIRST_OUTPUT_TIMEOUT = 8.0
 # passe maintenant, c'est redhibitoire.
 _WORKING_CODEC: dict[str, int] = {}
 
+# Delai laisse a la camera pour commencer a diffuser apres son reveil.
+WAKE_SETTLE = 3.0
+
 # En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
 MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
 
@@ -229,6 +232,7 @@ class EzvizCloudStreamView(HomeAssistantView):
             """
             import select  # noqa: PLC0415
             import subprocess  # noqa: PLC0415
+            import time  # noqa: PLC0415
             from threading import Thread  # noqa: PLC0415
 
             from pyezvizapi.cloud_stream import open_cloud_stream  # noqa: PLC0415
@@ -239,11 +243,17 @@ class EzvizCloudStreamView(HomeAssistantView):
 
             remux: subprocess.Popen[bytes] | None = None
             try:
-                # Reveiller la camera AVANT d'ouvrir le flux. Sur batterie, elle
-                # dort : sans ce reveil, le flux ne rend rien et on attend
-                # l'expiration pour l'apprendre.
+                # Reveiller la camera AVANT d'ouvrir le flux, puis LUI LAISSER
+                # LE TEMPS de s'executer.
+                #
+                # Sur batterie, elle ne pousse rien tant qu'on ne l'a pas
+                # sollicitee. Mesure du 2026-09-22 : en ouvrant le flux dans la
+                # foulee du reveil, la premiere demande echoue et c'est la
+                # SUIVANTE qui en beneficie. Quelques secondes d'attente valent
+                # mieux que seize secondes d'expiration.
                 with suppress(HTTPError, PyEzvizError):
                     client.get_detection_sensibility(serial)
+                    time.sleep(WAKE_SETTLE)
 
                 with open_cloud_stream(client, serial) as stream:
                     stream.start()
