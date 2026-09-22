@@ -239,7 +239,19 @@ class EzvizCloudStreamView(HomeAssistantView):
                     remux = subprocess.Popen(  # noqa: S603
                         [
                             ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
-                            "-fflags", "nobuffer", "-flags", "low_delay",
+                            # ⛔ REGENERER LES HORODATAGES.
+                            #
+                            # Le MPEG-PS de ces cameras porte des PTS
+                            # irreguliers : le lecteur s'arrete a chaque saut
+                            # en attendant la suite, d'ou un gel toutes les
+                            # deux ou trois secondes. L'horloge murale donne
+                            # une base monotone, que le cloud soit regulier ou
+                            # non.
+                            "-use_wallclock_as_timestamps", "1",
+                            # `nobuffer` a ete retire volontairement : il
+                            # supprimait toute absorption, et la moindre
+                            # irregularite du cloud passait au lecteur.
+                            "-flags", "low_delay",
                             # ⛔ SONDAGE COURT. A 0,2 Mbps, un probesize de
                             # 5 Mo demande TROIS MINUTES avant la premiere
                             # image : go2rtc expire, le WebRTC ne s'etablit
@@ -250,6 +262,8 @@ class EzvizCloudStreamView(HomeAssistantView):
                             "-analyzeduration", str(ANALYZE_DURATION),
                             "-f", input_format, "-i", "pipe:0",
                             *codec_args,
+                            # Ne pas retarder la sortie au-dela du necessaire.
+                            "-muxdelay", "0", "-muxpreload", "0",
                             "-f", "mpegts", "pipe:1",
                         ],
                         stdin=subprocess.PIPE,
