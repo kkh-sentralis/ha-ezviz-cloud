@@ -79,13 +79,6 @@ ANALYZE_DURATION = 500_000  # microsecondes, soit une demi-seconde
 # suivante. Le direct ne tolere pas qu'on attende plus longtemps.
 FIRST_OUTPUT_TIMEOUT = 8.0
 
-# Configuration retenue par camera, apres une premiere ouverture reussie.
-#
-# L'audio de ces modeles echoue quasi systematiquement (piste mp2 annoncee a
-# « 0 canaux »). Le retenter a CHAQUE ouverture coute huit secondes avant meme
-# d'essayer ce qui marche : sur une camera qu'on ouvre pour voir ce qui se
-# passe maintenant, c'est redhibitoire.
-_WORKING_CODEC: dict[str, int] = {}
 
 
 
@@ -117,51 +110,32 @@ IMKH_HEADER = b"IMKH"
 # deduit ni taille de trame ni frequence, refuse d'ecrire l'en-tete MPEG-TS, et
 # la VIDEO -- parfaitement valide -- tombe avec elle. On retente alors sans le
 # son : mieux vaut une image muette que pas d'image.
-def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
-    """Les deux tentatives, pour une largeur de transcodage donnee.
+def _codec_args(width: int) -> list[str]:
+    """Les arguments de codage, pour une largeur donnee.
 
-    ⛔ LE TRANSCODAGE EST LE GOULET, PAS LE TRANSPORT.
-    #
-    Mesure du 2026-09-22, meme source WebSocket :
-        sans transcodage   29,9 images/s
-        transcode en 1080p  6 a 9 images/s
-    Le Pi doit decoder du H.265 2560x1440 puis reencoder en H.264, les deux en
-    logiciel. Une largeur NULLE laisse donc passer le flux tel quel : cout
-    processeur nul, cadence pleine, au prix d'un HEVC que tous les navigateurs
-    ne lisent pas aussi bien.
+    ⛔ JAMAIS D'AUDIO. Ces cameras annoncent une piste mp2 a « 0 canaux » :
+    ffmpeg n'en deduit ni taille de trame ni frequence, refuse d'ecrire
+    l'en-tete MPEG-TS, et la video tombe avec elle. Il faut HUIT SECONDES pour
+    le constater, et cette tentative perdue consomme une session WebSocket que
+    le cloud facture cher -- mesure : deux sessions, et le debit tombe de
+    1,50 a 0,15 Mbps.
+
+    Une seule tentative, une seule session, pas de repli : c'est ce que fait le
+    montage de reference, et c'est pourquoi il demarre en quatre secondes.
+
+    Une largeur NULLE laisse passer le flux tel quel, sans decodage ni
+    reencodage : cadence pleine, cout processeur nul, au prix d'un H.265 que
+    tous les navigateurs ne lisent pas aussi bien.
     """
     if not width:
-        return (
-            (["-c:v", "copy", "-an"], "copie sans audio"),
-            (["-c:v", "copy", "-c:a", "aac", "-ac", "1", "-ar", "16000"], "copie avec audio"),
-        )
-    video = [
-        # La cadence constante a ete essayee (1.3.1) et RETIREE : elle duplique
-        # des images sans rien lisser, puisque le decalage ne vient pas de
-        # l'irregularite mais du tampon HLS en aval.
+        return ["-c:v", "copy", "-an"]
+    return [
+        "-vf", f"scale={width}:-2",
         "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
         "-g", "30",
         "-b:v", "2M",
+        "-an",
     ]
-    video = ["-vf", f"scale={width}:-2", *video]
-    # ⛔ SANS AUDIO EN PREMIER, ET CE N'EST PAS UN DETAIL.
-    #
-    # Ces cameras annoncent une piste mp2 a « 0 canaux » : la tentative avec le
-    # son echoue presque toujours, et il faut HUIT SECONDES pour s'en rendre
-    # compte. Pire, cette tentative perdue consomme une session WebSocket
-    # aupres d'EZVIZ ; la suivante en ouvre une seconde, et le cloud la sert
-    # nettement moins bien.
-    #
-    # Mesure comparative avec un montage n'ouvrant qu'UNE session :
-    #   une session   1re image 4,7 s   1,50 Mbps
-    #   deux sessions 1re image 9,3 s   0,15 Mbps
-    #
-    # Le son passe donc en second : qui l'a le decouvre au deuxieme essai, et
-    # la memorisation par camera fait que ce n'est paye qu'une fois.
-    return (
-        ([*video, "-an"], "sans audio"),
-        ([*video, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
-    )
 
 
 ANNEX_B_START = b"\x00\x00\x00\x01"
@@ -611,22 +585,8 @@ class EzvizCloudStreamView(HomeAssistantView):
 
         def _produce() -> None:
             try:
-                attempts = _codec_attempts(stream_width)
-                known = _WORKING_CODEC.get(serial)
-                order = (
-                    (known, *(i for i in range(len(attempts)) if i != known))
-                    if known is not None
-                    else range(len(attempts))
-                )
-                for index in order:
-                    codec_args, label = attempts[index]
-                    if _attempt(codec_args, label):
-                        _WORKING_CODEC[serial] = index
-                        return
-                    _LOGGER.warning(
-                        "EZVIZ %s : diffusion %s impossible, repli", serial, label
-                    )
-                _LOGGER.warning("EZVIZ %s : aucune diffusion possible", serial)
+                if not _attempt(_codec_args(stream_width), "sans audio"):
+                    _LOGGER.warning("EZVIZ %s : aucune diffusion possible", serial)
             finally:
                 writer.close()
 
