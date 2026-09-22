@@ -234,7 +234,12 @@ class EzvizCloudStreamView(HomeAssistantView):
                             "-fflags", "nobuffer", "-flags", "low_delay",
                             "-probesize", "5000000", "-analyzeduration", "5000000",
                             "-f", input_format, "-i", "pipe:0",
-                            "-c", "copy", "-f", "mpegts", "pipe:1",
+                            # ⛔ PAS D'AUDIO. La camera annonce une piste mp2
+                            # a « 0 canaux » : ffmpeg n'en deduit ni frame size
+                            # ni sample rate, refuse d'ecrire l'en-tete MPEG-TS,
+                            # et la VIDEO -- parfaitement valide -- tombe avec.
+                            "-an",
+                            "-c:v", "copy", "-f", "mpegts", "pipe:1",
                         ],
                         stdin=subprocess.PIPE,
                         stdout=subprocess.PIPE,
