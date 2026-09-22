@@ -1,0 +1,213 @@
+{
+  "config": {
+    "abort": {
+      "already_configured_account": "Le compte est déjà configuré",
+      "ezviz_cloud_account_missing": "EZVIZ cloud account missing. Please reconfigure EZVIZ cloud account",
+      "reauth_successful": "La ré-authentification a réussi",
+      "unknown": "Erreur inattendue"
+    },
+    "error": {
+      "cannot_connect": "Échec de la connexion",
+      "invalid_auth": "Authentification invalide",
+      "invalid_host": "Nom d'hôte ou adresse IP invalide",
+      "mfa_required": "2FA enabled on account, please disable and retry"
+    },
+    "flow_title": "{serial}",
+    "step": {
+      "confirm": {
+        "data": {
+          "password": "Mot de passe",
+          "username": "Nom d'utilisateur"
+        },
+        "description": "Enter RTSP credentials for EZVIZ camera {serial} with IP {ip_address}",
+        "title": "Discovered EZVIZ Camera"
+      },
+      "reauth_confirm": {
+        "data": {
+          "password": "Mot de passe",
+          "username": "Nom d'utilisateur"
+        },
+        "description": "Enter credentials to reauthenticate to EZVIZ cloud account",
+        "title": "Ré-authentifier l'intégration"
+      },
+      "user": {
+        "data": {
+          "password": "Mot de passe",
+          "url": "URL",
+          "username": "Nom d'utilisateur"
+        },
+        "title": "Connect to EZVIZ Cloud"
+      },
+      "user_custom_url": {
+        "data": {
+          "password": "Mot de passe",
+          "url": "URL",
+          "username": "Nom d'utilisateur"
+        },
+        "description": "Manually specify your region URL",
+        "title": "Connect to custom EZVIZ URL"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "alarm_schedules_enabled": {
+        "name": "Activation des calendriers d'alarme"
+      },
+      "encrypted": {
+        "name": "Chiffrement"
+      }
+    },
+    "button": {
+      "ptz_down": {
+        "name": "PTZ bas"
+      },
+      "ptz_left": {
+        "name": "PTZ gauche"
+      },
+      "ptz_right": {
+        "name": "PTZ droite"
+      },
+      "ptz_up": {
+        "name": "PTZ haut"
+      }
+    },
+    "image": {
+      "last_motion_image": {
+        "name": "Dernière image du mouvement"
+      }
+    },
+    "light": {
+      "light": {
+        "name": "Lumière"
+      }
+    },
+    "number": {
+      "detection_sensibility": {
+        "name": "Sensibilité de détection"
+      }
+    },
+    "select": {
+      "alarm_sound_mode": {
+        "name": "Avertissement sonore",
+        "state": {
+          "intensive": "Intensive",
+          "silent": "Silent",
+          "soft": "Soft"
+        }
+      },
+      "battery_camera_work_mode": {
+        "name": "Mode de fonctionnement de la batterie",
+        "state": {
+          "custom": "Custom",
+          "high_performance": "High performance",
+          "plugged_in": "Plugged in",
+          "power_save": "Power save",
+          "super_power_save": "Super power saving"
+        }
+      }
+    },
+    "sensor": {
+      "alarm_sound_mod": {
+        "name": "Niveau sonore de l'alarme"
+      },
+      "last_alarm_time": {
+        "name": "Heure de la dernière alarme"
+      },
+      "last_alarm_type_code": {
+        "name": "Code du type de la dernière alarme"
+      },
+      "last_alarm_type_name": {
+        "name": "Nom du type de la dernière alarme"
+      },
+      "local_ip": {
+        "name": "IP locale"
+      },
+      "pir_status": {
+        "name": "État du PIR"
+      },
+      "seconds_last_trigger": {
+        "name": "Secondes depuis le dernier déclenchement"
+      },
+      "supported_channels": {
+        "name": "Canaux pris en charge"
+      },
+      "wan_ip": {
+        "name": "IP WAN"
+      }
+    },
+    "siren": {
+      "siren": {
+        "name": "Sirène"
+      }
+    },
+    "switch": {
+      "all_day_video_recording": {
+        "name": "Enregistrement vidéo toute la journée"
+      },
+      "audio": {
+        "name": "Audio"
+      },
+      "auto_sleep": {
+        "name": "Veille automatique"
+      },
+      "flicker_light_on_movement": {
+        "name": "Faire clignoter la lumière lors du mouvement"
+      },
+      "follow_movement": {
+        "name": "Suivre le mouvement"
+      },
+      "infrared_light": {
+        "name": "Lumière infrarouge"
+      },
+      "motion_tracking": {
+        "name": "Suivi de mouvement"
+      },
+      "pir_motion_activated_light": {
+        "name": "Lumière activée par le détecteur PIR"
+      },
+      "privacy": {
+        "name": "Confidentialité"
+      },
+      "sleep": {
+        "name": "Veille"
+      },
+      "status_light": {
+        "name": "Voyant d'état"
+      },
+      "tamper_alarm": {
+        "name": "Alarme d'autoprotection"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "ffmpeg_arguments": "Arguments passed to FFmpeg for cameras",
+          "timeout": "Request timeout (seconds)"
+        }
+      }
+    }
+  },
+  "services": {
+    "set_alarm_detection_sensibility": {
+      "description": "Changes the sensibility level of the motion detection.",
+      "fields": {
+        "level": {
+          "description": "Sensibility level. 1-6 for type 0 (normal camera), or 1-100 for type 3 (PIR sensor camera).",
+          "name": "Level"
+        },
+        "type_value": {
+          "description": "Detection type. 0 for normal camera, or 3 for PIR sensor camera.",
+          "name": "Type"
+        }
+      },
+      "name": "Set detection sensibility"
+    },
+    "wake_device": {
+      "description": "Wakes a camera from sleep mode. Especially useful for battery cameras.",
+      "name": "Wake camera"
+    }
+  }
+}
