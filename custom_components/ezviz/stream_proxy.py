@@ -51,6 +51,10 @@ DEFAULT_HTTP_PORT = 8123
 # Taille de lecture sur la sortie de ffmpeg.
 BLOCK_SIZE = 32 * 1024
 
+# Sondage d'entree de ffmpeg, dimensionne pour le DIRECT et non pour l'analyse.
+PROBE_SIZE = 96 * 1024        # octets
+ANALYZE_DURATION = 1_000_000  # microsecondes, soit une seconde
+
 # En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
 MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
 
@@ -231,7 +235,14 @@ class EzvizCloudStreamView(HomeAssistantView):
                         [
                             ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
                             "-fflags", "nobuffer", "-flags", "low_delay",
-                            "-probesize", "5000000", "-analyzeduration", "5000000",
+                            # ⛔ SONDAGE COURT. A 0,2 Mbps, un probesize de
+                            # 5 Mo demande TROIS MINUTES avant la premiere
+                            # image : go2rtc expire, le WebRTC ne s'etablit
+                            # jamais, et le lecteur retombe sur du HLS
+                            # tamponne. Quelques centaines de ko suffisent a
+                            # reconnaitre un flux video.
+                            "-probesize", str(PROBE_SIZE),
+                            "-analyzeduration", str(ANALYZE_DURATION),
                             "-f", input_format, "-i", "pipe:0",
                             *codec_args,
                             "-f", "mpegts", "pipe:1",
