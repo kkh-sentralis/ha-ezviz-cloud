@@ -17,6 +17,7 @@ renouvelle elle-meme quand elle expire.
 from __future__ import annotations
 
 import asyncio
+import itertools
 from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
@@ -162,37 +163,78 @@ class EzvizCloudStreamView(HomeAssistantView):
             from threading import Thread  # noqa: PLC0415
 
             from pyezvizapi.cloud_stream import open_cloud_stream  # noqa: PLC0415
+            from pyezvizapi.stream import (  # noqa: PLC0415
+                StreamTransport,
+                detect_transport,
+            )
 
-            remux = None
+            remux: subprocess.Popen[bytes] | None = None
             try:
-                remux = subprocess.Popen(  # noqa: S603
-                    [
-                        ffmpeg_binary, "-hide_banner", "-loglevel", "error",
-                        "-fflags", "nobuffer", "-flags", "low_delay",
-                        "-f", "hevc", "-i", "pipe:0",
-                        "-c", "copy", "-f", "mpegts", "pipe:1",
-                    ],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                )
-
-                def _drain() -> None:
-                    """Rendre le MPEG-TS au client au fil de l'eau."""
-                    assert remux is not None and remux.stdout is not None
-                    while chunk := remux.stdout.read(BLOCK_SIZE):
-                        writer.write(chunk)
-
-                drain = Thread(target=_drain, daemon=True)
-                drain.start()
-
-                depack = _Depacketizer()
                 with open_cloud_stream(client, serial) as stream:
                     stream.start()
+                    payloads = stream.iter_payloads()
+
+                    # On ne DEVINE pas le format : le premier paquet non vide le
+                    # dit. La bibliotheque suppose du MPEG-PS et lance
+                    # `ffmpeg -f mpeg` ; les cameras sur batterie emettent du
+                    # H.265 en RTP, d'ou un EINVAL silencieux (stderr=DEVNULL).
+                    first = b""
+                    for first in payloads:
+                        if first:
+                            break
+                    if not first:
+                        _LOGGER.warning("EZVIZ %s : flux vide", serial)
+                        return
+
+                    transport = detect_transport(first)
+                    _LOGGER.info(
+                        "EZVIZ %s : transport %s, premier paquet %d o : %s",
+                        serial, transport.name, len(first), first[:32].hex(),
+                    )
+
+                    if transport is StreamTransport.MPEG_TS:
+                        # Deja au bon format : ffmpeg serait un intermediaire inutile.
+                        writer.write(first)
+                        for payload in payloads:
+                            writer.write(payload)
+                        return
+
+                    if transport is StreamTransport.RTP:
+                        input_format, depack = "hevc", _Depacketizer()
+                    else:
+                        input_format, depack = "mpeg", None
+                        if transport is StreamTransport.UNKNOWN:
+                            _LOGGER.warning(
+                                "EZVIZ %s : transport inconnu, tentative en MPEG-PS",
+                                serial,
+                            )
+
+                    remux = subprocess.Popen(  # noqa: S603
+                        [
+                            ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
+                            "-fflags", "nobuffer", "-flags", "low_delay",
+                            "-f", input_format, "-i", "pipe:0",
+                            "-c", "copy", "-f", "mpegts", "pipe:1",
+                        ],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    )
+
+                    def _drain() -> None:
+                        """Rendre le MPEG-TS au client au fil de l'eau."""
+                        assert remux is not None and remux.stdout is not None
+                        while chunk := remux.stdout.read(BLOCK_SIZE):
+                            writer.write(chunk)
+
+                    drain = Thread(target=_drain, daemon=True)
+                    drain.start()
+
                     assert remux.stdin is not None
-                    for payload in stream.iter_payloads():
-                        if annex_b := depack.feed(payload):
-                            remux.stdin.write(annex_b)
+                    for payload in itertools.chain([first], payloads):
+                        data = depack.feed(payload) if depack else payload
+                        if data:
+                            remux.stdin.write(data)
                     remux.stdin.close()
-                drain.join(timeout=5)
+                    drain.join(timeout=5)
             except PyEzvizError:
                 _LOGGER.exception("EZVIZ cloud stream failed for %s", serial)
             except Exception:  # noqa: BLE001 - le thread ne doit jamais tuer HA
