@@ -65,12 +65,25 @@ ALARM_SOUND_MODE_SELECT_TYPE = EzvizSelectEntityDescription(
 
 
 def battery_work_mode_current_option(ezvizSelect: EzvizSelect) -> str | None:
-    """Return the selected entity option to represent the entity state."""
-    battery_work_mode = getattr(
-        BatteryCameraWorkMode,
-        ezvizSelect.data[ezvizSelect.entity_description.key],
-        BatteryCameraWorkMode.UNKNOWN,
-    )
+    """Return the selected entity option to represent the entity state.
+
+    pyezvizapi 1.0.5.0 rend le mode sous forme d'ENTIER la ou l'amont attendait
+    le nom du membre : `getattr(Enum, 7)` leve « attribute name must be string »
+    et fait tomber la mise a jour de TOUTES les entites du coordinateur.
+    On accepte les deux formes.
+    """
+    raw = ezvizSelect.data[ezvizSelect.entity_description.key]
+    try:
+        battery_work_mode = (
+            BatteryCameraWorkMode(raw)
+            if isinstance(raw, int)
+            else getattr(
+                BatteryCameraWorkMode, str(raw), BatteryCameraWorkMode.UNKNOWN
+            )
+        )
+    except ValueError:
+        # Mode inconnu de l'enumeration : c'est exactement le bug AOV d'origine.
+        battery_work_mode = BatteryCameraWorkMode.UNKNOWN
     if battery_work_mode == BatteryCameraWorkMode.UNKNOWN:
         return None
 
