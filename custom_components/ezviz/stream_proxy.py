@@ -90,9 +90,6 @@ _WORKING_CODEC: dict[str, int] = {}
 # Delai laisse a la camera pour commencer a diffuser apres son reveil.
 WAKE_SETTLE = 3.0
 
-# Cadence de sortie imposee. Le cloud livre par rafales ; sans cadence fixe, le
-# lecteur reproduit les creux.
-STREAM_FPS = 15
 
 
 # Entete proprietaire precedant les paquets RTP.
@@ -125,17 +122,11 @@ IMKH_HEADER = b"IMKH"
 def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
     """Les deux tentatives, pour une largeur de transcodage donnee."""
     video = [
-        # ⛔ CADENCE CONSTANTE EN SORTIE.
-        #
-        # Le cloud livre les images PAR RAFALES : trois d'un coup, puis deux
-        # secondes de silence. Comme on horodate a l'arrivee, le lecteur
-        # reproduit fidelement ce hoquet -- l'horloge incrustee avance 30, 31,
-        # 32, s'arrete, repart. Une cadence imposee fait dupliquer les images
-        # pendant les creux, et le flux redevient regulier.
-        "-r", str(STREAM_FPS),
-        "-fps_mode", "cfr",
+        # La cadence constante a ete essayee (1.3.1) et RETIREE : elle duplique
+        # des images sans rien lisser, puisque le decalage ne vient pas de
+        # l'irregularite mais du tampon HLS en aval.
         "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-        "-g", str(STREAM_FPS * 2),   # une image cle toutes les deux secondes
+        "-g", "30",
         "-b:v", "2M",
     ]
     if width:
