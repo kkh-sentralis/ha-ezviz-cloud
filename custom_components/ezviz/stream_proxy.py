@@ -17,8 +17,13 @@ renouvelle elle-meme quand elle expire.
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import suppress
-import itertools
+import os
+import socket
+import ssl
+import struct
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
@@ -71,11 +76,19 @@ _WORKING_CODEC: dict[str, int] = {}
 # Delai laisse a la camera pour commencer a diffuser apres son reveil.
 WAKE_SETTLE = 3.0
 
-# En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
-MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
+# ⛔ TRANSPORT WEBSOCKET, ET NON TCP.
+#
+# Mesure du 2026-09-22 : le transport TCP de la bibliotheque ne livre qu'UNE
+# IMAGE PAR SECONDE -- verifie sans transcodage, l'encodeur hors de cause. Le
+# WebSocket, sur le meme serveur et avec le meme jeton de session, rend
+# 2,2 Mbps de H.265 propre. C'est le meme point d'entree, pas le meme tuyau.
+#
+# Le port du WebSocket differe de celui de ysproto ; on essaie le connu d'abord.
+WEBSOCKET_PORTS = (20006, 8666)
 
-# Combien de paquets on accepte de traverser pour trouver ce point.
-SYNC_SEARCH_LIMIT = 200
+# Entete proprietaire precedant les paquets RTP.
+IMKH_HEADER = b"IMKH"
+
 
 # Deux tentatives, dans cet ordre.
 #
@@ -101,16 +114,12 @@ SYNC_SEARCH_LIMIT = 200
 #                   il PERD des images, ce qui saccade
 TARGET_WIDTH = 1920
 
-# ⚠ MESURE EN COURS (1.0.24) : copie sans transcodage.
-#
-# Le flux transcode ne rend que 0,6 a 1,9 image/s, la ou un direct en demande
-# quinze a vingt-cinq. Deux causes possibles, et leurs correctifs s'opposent :
-# soit le transport TCP affame la chaine, soit libx264 sature le Pi et le tube
-# remonte jusqu'au serveur, qui jette.
-#
-# Copier sans encoder retire l'encodeur de l'equation : si la cadence reste
-# basse, c'est le transport ; si elle remonte, c'est le Pi.
-VIDEO_ARGS = ["-c:v", "copy"]
+VIDEO_ARGS = [
+    "-vf", f"scale={TARGET_WIDTH}:-2",
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+    "-g", "30",
+    "-b:v", "2M",
+]
 
 # Deux tentatives, dans cet ordre.
 #
@@ -132,11 +141,8 @@ H265_FRAGMENTATION_UNIT = 49
 class _Depacketizer:
     """RTP -> H.265 Annex-B (RFC 7798).
 
-    `cloud_stream.copy_cloud_stream_to_mpegts` suppose que la charge utile est
-    du MPEG-PS et lance `ffmpeg -f mpeg`. Les cameras sur batterie emettent du
-    H.265 en RTP : ffmpeg sort alors en EINVAL (code 234). La bibliotheque
-    connait pourtant ce cas -- son enumeration StreamTransport liste RTP -- mais
-    le copieur ne l'exploite pas. On dépaquetise donc nous-memes.
+    Le transport WebSocket transporte du H.265 en RTP, fragmente selon la
+    RFC 7798. La bibliotheque n'expose pas de depaquetiseur : on le fait ici.
 
     Mesure du 2026-09-22 sur 26 Mo : VPS/SPS/PPS x33, IDR x33, flux decodable.
     """
@@ -172,6 +178,108 @@ class _Depacketizer:
             self._fragment = None
             return out
         return b""
+
+
+def _websocket_url(stream_url: str, port: int) -> str:
+    """ysproto://…/live?… -> wss://…/live?… , pret pour le transport WebSocket.
+
+    La bibliotheque bati cette URL pour son transport TCP, mais c'est le MEME
+    point d'entree que celui qu'emploie le lecteur officiel en WebSocket : memes
+    parametres dev, chn, stream, ssn, auth. Seuls changent le schema, le port,
+    et deux valeurs que le lecteur web positionne differemment.
+    """
+    parts = urlsplit(stream_url)
+    params = dict(parse_qsl(parts.query))
+    params["cln"] = "100"  # le lecteur web s'annonce ainsi
+    params["biz"] = "4"
+    return urlunsplit(
+        ("wss", f"{parts.hostname}:{port}", parts.path, urlencode(params), "")
+    )
+
+
+class _WebSocket:
+    """Client WebSocket en lecture seule, strictement bibliotheque standard.
+
+    Le conteneur de Home Assistant n'embarque ni `websockets` ni `aiohttp` pour
+    un usage synchrone en fil d'executeur, et ce pont ne fait que LIRE : le
+    serveur pousse le flux de lui-meme. Le masquage cote client, la
+    fragmentation sortante et les extensions sont donc hors sujet.
+
+    ⚠ Le serveur EZVIZ ne repond pas aux pings : tout keepalive applicatif
+    ferme la connexion au bout d'une vingtaine de secondes.
+    """
+
+    def __init__(self, url: str, origin: str, timeout: float = 15.0) -> None:
+        parts = urlsplit(url)
+        port = parts.port or 443
+        path = parts.path + (f"?{parts.query}" if parts.query else "")
+        raw = socket.create_connection((parts.hostname, port), timeout=timeout)
+        self._sock = ssl.create_default_context().wrap_socket(
+            raw, server_hostname=parts.hostname
+        )
+        key = base64.b64encode(os.urandom(16)).decode()
+        self._sock.sendall(
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {parts.hostname}:{port}\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\n"
+            "Sec-WebSocket-Version: 13\r\n"
+            f"Origin: {origin}\r\n".encode() + b"\r\n"
+        )
+        self._buffer = b""
+        head = self._until(b"\r\n\r\n")
+        if b" 101 " not in head.split(b"\r\n", 1)[0]:
+            raise ConnectionError(f"handshake refuse : {head.splitlines()[0]!r}")
+
+    def _until(self, marker: bytes) -> bytes:
+        while marker not in self._buffer:
+            if not (chunk := self._sock.recv(65536)):
+                raise ConnectionError("fermeture pendant la poignee de main")
+            self._buffer += chunk
+        head, self._buffer = self._buffer.split(marker, 1)
+        return head
+
+    def _read(self, count: int) -> bytes:
+        while len(self._buffer) < count:
+            if not (chunk := self._sock.recv(65536)):
+                raise ConnectionError("connexion fermee")
+            self._buffer += chunk
+        out, self._buffer = self._buffer[:count], self._buffer[count:]
+        return out
+
+    def messages(self):
+        """Rendre (opcode, charge utile) pour chaque message reassemble."""
+        opcode: int | None = None
+        payload = bytearray()
+        while True:
+            first, second = self._read(2)
+            fin = first & 0x80
+            this_opcode = first & 0x0F
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack(">H", self._read(2))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", self._read(8))[0]
+            mask = self._read(4) if second & 0x80 else None
+            data = self._read(length) if length else b""
+            if mask:
+                data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+
+            if this_opcode == 0x8:  # fermeture
+                return
+            if this_opcode in (0x9, 0xA):  # ping / pong
+                continue
+            if this_opcode != 0x0:  # nouvelle trame
+                opcode, payload = this_opcode, bytearray()
+            payload.extend(data)
+            if fin and opcode is not None:
+                yield opcode, bytes(payload)
+                opcode, payload = None, bytearray()
+
+    def close(self) -> None:
+        with suppress(OSError):
+            self._sock.close()
 
 
 class _QueueWriter:
@@ -239,143 +347,107 @@ class EzvizCloudStreamView(HomeAssistantView):
             import time  # noqa: PLC0415
             from threading import Thread  # noqa: PLC0415
 
-            from pyezvizapi.cloud_stream import open_cloud_stream  # noqa: PLC0415
-            from pyezvizapi.stream import (  # noqa: PLC0415
-                StreamTransport,
-                detect_transport,
+            from pyezvizapi.cloud_stream import (  # noqa: PLC0415
+                get_cloud_stream_info,
             )
 
             remux: subprocess.Popen[bytes] | None = None
+            websocket: _WebSocket | None = None
             try:
                 # Reveiller la camera AVANT d'ouvrir le flux, puis LUI LAISSER
-                # LE TEMPS de s'executer.
-                #
-                # Sur batterie, elle ne pousse rien tant qu'on ne l'a pas
-                # sollicitee. Mesure du 2026-09-22 : en ouvrant le flux dans la
-                # foulee du reveil, la premiere demande echoue et c'est la
-                # SUIVANTE qui en beneficie. Quelques secondes d'attente valent
-                # mieux que seize secondes d'expiration.
+                # LE TEMPS de s'executer. Sur batterie, elle ne pousse rien tant
+                # qu'on ne l'a pas sollicitee, et ouvrir dans la foulee de
+                # l'ordre fait echouer la premiere demande.
                 with suppress(HTTPError, PyEzvizError):
                     client.get_detection_sensibility(serial)
                     time.sleep(WAKE_SETTLE)
 
-                with open_cloud_stream(client, serial) as stream:
-                    stream.start()
-                    payloads = stream.iter_payloads()
-
-                    # ⛔ ATTENDRE UN EN-TETE DE PACK AVANT D'ALIMENTER FFMPEG.
-                    #
-                    # Le premier paquet recu est rarement un pack header : c'est
-                    # le plus souvent un PES isole (000001bd, 000001c0). Demarre
-                    # au milieu d'un PES, ffmpeg ne se synchronise jamais et sort
-                    # en EINVAL -- le « status 234 » de
-                    # copy_cloud_stream_to_mpegts, qui alimente des le premier
-                    # paquet et souffre du meme defaut.
-                    first = b""
-                    for candidate in itertools.islice(payloads, SYNC_SEARCH_LIMIT):
-                        if candidate.startswith(MPEG_PS_PACK_HEADER):
-                            first = candidate
-                            break
-                    if not first:
-                        _LOGGER.warning(
-                            "EZVIZ %s : aucun en-tete de pack MPEG-PS", serial
+                info = get_cloud_stream_info(client, serial)
+                origin = f"https://{urlsplit(str(info['stream_url'])).hostname}"
+                for port in WEBSOCKET_PORTS:
+                    url = _websocket_url(str(info["stream_url"]), port)
+                    try:
+                        websocket = _WebSocket(url, origin=origin)
+                        break
+                    except (OSError, ConnectionError) as err:
+                        _LOGGER.debug(
+                            "EZVIZ %s : port %s refuse (%s)", serial, port, err
                         )
-                        return False
+                if websocket is None:
+                    _LOGGER.warning("EZVIZ %s : aucun port WebSocket ouvert", serial)
+                    return False
 
-                    transport = detect_transport(first)
-                    _LOGGER.debug(
-                        "EZVIZ %s : transport %s, essai %s", serial, transport.name,
-                        label,
+                remux = subprocess.Popen(  # noqa: S603
+                    [
+                        ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
+                        # Le flux n'a pas d'horodatage : l'horloge murale donne
+                        # une base monotone, sans quoi le lecteur se fige a
+                        # chaque irregularite.
+                        "-use_wallclock_as_timestamps", "1",
+                        "-flags", "low_delay",
+                        "-probesize", str(PROBE_SIZE),
+                        "-analyzeduration", str(ANALYZE_DURATION),
+                        "-f", "hevc", "-i", "pipe:0",
+                        *codec_args,
+                        "-muxdelay", "0", "-muxpreload", "0",
+                        "-f", "mpegts", "pipe:1",
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    # ⛔ JAMAIS DEVNULL : c'est ce que fait la bibliotheque, et
+                    # c'est pourquoi ses echecs etaient indiagnosticables.
+                    stderr=subprocess.PIPE,
+                )
+
+                def _log_ffmpeg() -> None:
+                    assert remux is not None and remux.stderr is not None
+                    for raw in remux.stderr:
+                        if line := raw.decode("utf-8", "replace").strip():
+                            _LOGGER.debug("EZVIZ %s ffmpeg: %s", serial, line)
+
+                def _feed() -> None:
+                    assert remux is not None and remux.stdin is not None
+                    assert websocket is not None
+                    depack = _Depacketizer()
+                    try:
+                        for opcode, message in websocket.messages():
+                            if opcode == 0x1:  # statut, en texte
+                                status = json.loads(message)
+                                if status.get("statusCode") != 0:
+                                    _LOGGER.warning(
+                                        "EZVIZ %s : flux refuse %s",
+                                        serial, message[:120],
+                                    )
+                                    break
+                                continue
+                            if message[:4] == IMKH_HEADER:
+                                continue
+                            if annex_b := depack.feed(message):
+                                remux.stdin.write(annex_b)
+                        remux.stdin.close()
+                    except (BrokenPipeError, OSError, ConnectionError):
+                        pass  # ffmpeg ou le serveur a ferme
+
+                Thread(target=_log_ffmpeg, daemon=True).start()
+                Thread(target=_feed, daemon=True).start()
+
+                assert remux.stdout is not None
+                # Attente bornee : read() reclamerait un bloc entier et
+                # bloquerait indefiniment si rien ne sort.
+                ready, _, _ = select.select(
+                    [remux.stdout], [], [], FIRST_OUTPUT_TIMEOUT
+                )
+                if not ready or not (chunk := remux.stdout.read1(BLOCK_SIZE)):
+                    _LOGGER.warning(
+                        "EZVIZ %s : aucune image en %s s (%s)",
+                        serial, FIRST_OUTPUT_TIMEOUT, label,
                     )
-                    input_format = (
-                        "hevc" if transport is StreamTransport.RTP else "mpeg"
-                    )
-                    depack = (
-                        _Depacketizer()
-                        if transport is StreamTransport.RTP
-                        else None
-                    )
+                    return False
 
-                    remux = subprocess.Popen(  # noqa: S603
-                        [
-                            ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
-                            # ⛔ REGENERER LES HORODATAGES.
-                            #
-                            # Le MPEG-PS de ces cameras porte des PTS
-                            # irreguliers : le lecteur s'arrete a chaque saut
-                            # en attendant la suite, d'ou un gel toutes les
-                            # deux ou trois secondes. L'horloge murale donne
-                            # une base monotone, que le cloud soit regulier ou
-                            # non.
-                            "-use_wallclock_as_timestamps", "1",
-                            # `nobuffer` a ete retire volontairement : il
-                            # supprimait toute absorption, et la moindre
-                            # irregularite du cloud passait au lecteur.
-                            "-flags", "low_delay",
-                            # ⛔ SONDAGE COURT. A 0,2 Mbps, un probesize de
-                            # 5 Mo demande TROIS MINUTES avant la premiere
-                            # image : go2rtc expire, le WebRTC ne s'etablit
-                            # jamais, et le lecteur retombe sur du HLS
-                            # tamponne. Quelques centaines de ko suffisent a
-                            # reconnaitre un flux video.
-                            "-probesize", str(PROBE_SIZE),
-                            "-analyzeduration", str(ANALYZE_DURATION),
-                            "-f", input_format, "-i", "pipe:0",
-                            *codec_args,
-                            # Ne pas retarder la sortie au-dela du necessaire.
-                            "-muxdelay", "0", "-muxpreload", "0",
-                            "-f", "mpegts", "pipe:1",
-                        ],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        # ⛔ JAMAIS DEVNULL : c'est ce que fait la bibliotheque,
-                        # et c'est pourquoi son echec etait indiagnosticable.
-                        stderr=subprocess.PIPE,
-                    )
-
-                    def _log_ffmpeg() -> None:
-                        assert remux is not None and remux.stderr is not None
-                        for raw in remux.stderr:
-                            if line := raw.decode("utf-8", "replace").strip():
-                                _LOGGER.debug("EZVIZ %s ffmpeg: %s", serial, line)
-
-                    def _feed() -> None:
-                        assert remux is not None and remux.stdin is not None
-                        try:
-                            for payload in itertools.chain([first], payloads):
-                                data = depack.feed(payload) if depack else payload
-                                if data:
-                                    remux.stdin.write(data)
-                            remux.stdin.close()
-                        except (BrokenPipeError, OSError):
-                            pass  # ffmpeg a ferme : sa sortie d'erreur le dira
-
-                    Thread(target=_log_ffmpeg, daemon=True).start()
-                    Thread(target=_feed, daemon=True).start()
-
-                    assert remux.stdout is not None
-
-                    # ⛔ ATTENTE BORNEE, ET LECTURES NON BLOQUANTES.
-                    #
-                    # read(n) attend n octets ENTIERS ou la fin du flux : si
-                    # ffmpeg ne produit rien sans pour autant mourir, on attend
-                    # indefiniment et le repli n'a jamais lieu. select() borne
-                    # l'attente, read1() rend ce qui est disponible sans
-                    # reclamer un bloc complet -- ce qui compte pour du direct.
-                    ready, _, _ = select.select(
-                        [remux.stdout], [], [], FIRST_OUTPUT_TIMEOUT
-                    )
-                    if not ready or not (chunk := remux.stdout.read1(BLOCK_SIZE)):
-                        _LOGGER.warning(
-                            "EZVIZ %s : aucune image en %s s (%s)",
-                            serial, FIRST_OUTPUT_TIMEOUT, label,
-                        )
-                        return False
-
+                writer.write(chunk)
+                while chunk := remux.stdout.read1(BLOCK_SIZE):
                     writer.write(chunk)
-                    while chunk := remux.stdout.read1(BLOCK_SIZE):
-                        writer.write(chunk)
-                    return True
+                return True
             except PyEzvizError:
                 _LOGGER.exception("EZVIZ cloud stream failed for %s", serial)
                 return False
@@ -383,6 +455,8 @@ class EzvizCloudStreamView(HomeAssistantView):
                 _LOGGER.exception("Unexpected EZVIZ cloud stream error for %s", serial)
                 return False
             finally:
+                if websocket is not None:
+                    websocket.close()
                 if remux is not None and remux.poll() is None:
                     remux.kill()
 

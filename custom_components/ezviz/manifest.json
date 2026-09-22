@@ -17,6 +17,6 @@
   "requirements": [
     "pyezvizapi==1.0.5.0"
   ],
-  "version": "1.0.24",
+  "version": "1.1.0",
   "issue_tracker": "https://github.com/kkh-sentralis/ha-ezviz-cloud/issues"
 }
