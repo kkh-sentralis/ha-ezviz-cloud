@@ -20,6 +20,7 @@ import asyncio
 import base64
 from contextlib import suppress
 import os
+import re
 import socket
 import ssl
 import struct
@@ -367,6 +368,12 @@ class EzvizCloudStreamView(HomeAssistantView):
                 # server ». open_cloud_stream le passe par defaut ; en appelant
                 # get_cloud_stream_info directement, on herite du False.
                 info = get_cloud_stream_info(client, serial, refresh_vtm=True)
+                # Le jeton est masque : cette ligne part dans le journal.
+                _LOGGER.warning(
+                    "EZVIZ %s : url VTM %s",
+                    serial,
+                    re.sub(r"ssn=[^&]*", "ssn=***", str(info["stream_url"])),
+                )
                 origin = f"https://{urlsplit(str(info['stream_url'])).hostname}"
                 for port in WEBSOCKET_PORTS:
                     url = _websocket_url(str(info["stream_url"]), port)
@@ -374,8 +381,10 @@ class EzvizCloudStreamView(HomeAssistantView):
                         websocket = _WebSocket(url, origin=origin)
                         break
                     except (OSError, ConnectionError) as err:
-                        _LOGGER.debug(
-                            "EZVIZ %s : port %s refuse (%s)", serial, port, err
+                        _LOGGER.warning(
+                            "EZVIZ %s : %s:%s refuse -> %s: %s",
+                            serial, urlsplit(url).hostname, port,
+                            type(err).__name__, str(err)[:120],
                         )
                 if websocket is None:
                     _LOGGER.warning("EZVIZ %s : aucun port WebSocket ouvert", serial)
