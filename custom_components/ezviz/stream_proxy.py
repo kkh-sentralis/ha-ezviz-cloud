@@ -191,7 +191,9 @@ def _websocket_url(stream_url: str, port: int) -> str:
     """
     parts = urlsplit(stream_url)
     params = dict(parse_qsl(parts.query))
-    params["cln"] = "100"  # le lecteur web s'annonce ainsi
+    # Valeurs relevees sur le lecteur officiel : il s'annonce en cln=100 et
+    # demande biz=4, la ou le transport TCP utilise cln=9 et biz=1.
+    params["cln"] = "100"
     params["biz"] = "4"
     return urlunsplit(
         ("wss", f"{parts.hostname}:{port}", parts.path, urlencode(params), "")
@@ -215,9 +217,16 @@ class _WebSocket:
         port = parts.port or 443
         path = parts.path + (f"?{parts.query}" if parts.query else "")
         raw = socket.create_connection((parts.hostname, port), timeout=timeout)
-        self._sock = ssl.create_default_context().wrap_socket(
-            raw, server_hostname=parts.hostname
-        )
+        # ⛔ LE NOM N'EST PAS VERIFIE, LA CHAINE L'EST.
+        #
+        # Le serveur VTM est resolu sous forme d'ADRESSE IP par l'API du compte,
+        # et son certificat est emis pour un nom d'hote : la verification du nom
+        # echoue forcement (« IP address mismatch »). On garde la validation de
+        # la chaine -- le certificat reste celui d'EZVIZ -- et on renonce a la
+        # seule correspondance du nom, qu'on n'a pas les moyens de faire.
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        self._sock = context.wrap_socket(raw)
         key = base64.b64encode(os.urandom(16)).decode()
         self._sock.sendall(
             f"GET {path} HTTP/1.1\r\n"
@@ -367,7 +376,7 @@ class EzvizCloudStreamView(HomeAssistantView):
                 # pas rechargee et la resolution echoue sur « Could not find VTM
                 # server ». open_cloud_stream le passe par defaut ; en appelant
                 # get_cloud_stream_info directement, on herite du False.
-                info = get_cloud_stream_info(client, serial, refresh_vtm=True)
+                info = get_cloud_stream_info(client, serial, channel=1, refresh_vtm=True)
                 # Le jeton est masque : cette ligne part dans le journal.
                 _LOGGER.warning(
                     "EZVIZ %s : url VTM %s",
