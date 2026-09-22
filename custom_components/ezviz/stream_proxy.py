@@ -17,13 +17,14 @@ renouvelle elle-meme quand elle expire.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import itertools
 from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
-from pyezvizapi.exceptions import PyEzvizError
+from pyezvizapi.exceptions import HTTPError, PyEzvizError
 
 from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.components.http import HomeAssistantView
@@ -57,7 +58,15 @@ ANALYZE_DURATION = 1_000_000  # microsecondes, soit une seconde
 
 # Au-dela, on considere que cette tentative ne donnera rien et on passe a la
 # suivante. Le direct ne tolere pas qu'on attende plus longtemps.
-FIRST_OUTPUT_TIMEOUT = 12.0
+FIRST_OUTPUT_TIMEOUT = 8.0
+
+# Configuration retenue par camera, apres une premiere ouverture reussie.
+#
+# L'audio de ces modeles echoue quasi systematiquement (piste mp2 annoncee a
+# « 0 canaux »). Le retenter a CHAQUE ouverture coute huit secondes avant meme
+# d'essayer ce qui marche : sur une camera qu'on ouvre pour voir ce qui se
+# passe maintenant, c'est redhibitoire.
+_WORKING_CODEC: dict[str, int] = {}
 
 # En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
 MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
@@ -230,6 +239,12 @@ class EzvizCloudStreamView(HomeAssistantView):
 
             remux: subprocess.Popen[bytes] | None = None
             try:
+                # Reveiller la camera AVANT d'ouvrir le flux. Sur batterie, elle
+                # dort : sans ce reveil, le flux ne rend rien et on attend
+                # l'expiration pour l'apprendre.
+                with suppress(HTTPError, PyEzvizError):
+                    client.get_detection_sensibility(serial)
+
                 with open_cloud_stream(client, serial) as stream:
                     stream.start()
                     payloads = stream.iter_payloads()
@@ -359,8 +374,16 @@ class EzvizCloudStreamView(HomeAssistantView):
 
         def _produce() -> None:
             try:
-                for codec_args, label in CODEC_ATTEMPTS:
+                known = _WORKING_CODEC.get(serial)
+                order = (
+                    (known, *(i for i in range(len(CODEC_ATTEMPTS)) if i != known))
+                    if known is not None
+                    else range(len(CODEC_ATTEMPTS))
+                )
+                for index in order:
+                    codec_args, label = CODEC_ATTEMPTS[index]
                     if _attempt(codec_args, label):
+                        _WORKING_CODEC[serial] = index
                         return
                     _LOGGER.warning(
                         "EZVIZ %s : diffusion %s impossible, repli", serial, label
