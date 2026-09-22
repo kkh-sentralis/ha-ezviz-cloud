@@ -1,3 +1,7 @@
+> Note historique : ce document décrit le protocole WebSocket rétro-conçu
+> avant de découvrir que  gère le transport VTM nativement.
+> L'intégration ne l'utilise plus.
+
 # EZVIZ HB8C — comment obtenir le flux live
 
 Relevé le 2026-09-22 sur `HB8C-XX1234567` (modèle `CS-HB8c-R100-1N4WFL`), compte EU.

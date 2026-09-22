@@ -203,10 +203,7 @@ class EzvizCloudStreamView(HomeAssistantView):
                         return
 
                     transport = detect_transport(first)
-                    # WARNING et non INFO : le journal systeme de Home Assistant
-                    # ne remonte que WARNING et au-dessus, et cette ligne est la
-                    # seule facon de savoir ce que la camera emet reellement.
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "EZVIZ %s : transport %s, premier paquet %d o : %s",
                         serial, transport.name, len(first), first[:32].hex(),
                     )
@@ -255,7 +252,7 @@ class EzvizCloudStreamView(HomeAssistantView):
                         for raw in remux.stderr:
                             line = raw.decode("utf-8", "replace").strip()
                             if line:
-                                _LOGGER.warning("EZVIZ %s ffmpeg: %s", serial, line)
+                                _LOGGER.debug("EZVIZ %s ffmpeg: %s", serial, line)
 
                     Thread(target=_log_ffmpeg, daemon=True).start()
 

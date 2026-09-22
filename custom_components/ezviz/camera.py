@@ -182,11 +182,29 @@ class EzvizCamera(EzvizEntity, Camera):
         except InvalidHost as err:
             raise InvalidHost("Error disabling motion detection") from err
 
+    def _cloud_snapshot(self) -> bytes | None:
+        """Instantane via l'API du compte, sans ouvrir de flux."""
+        buffer = io.BytesIO()
+        try:
+            self.coordinator.ezviz_client.save_image(self._serial, buffer)
+        except (HTTPError, PyEzvizError):
+            _LOGGER.exception("Cannot capture image for %s", self._serial)
+            return None
+        return buffer.getvalue() or None
+
     @override
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
-        """Return a frame from the camera stream."""
+        """Return a frame from the camera stream.
+
+        Pour une camera sans RTSP local, tirer une image du flux voudrait dire
+        rouvrir une session cloud complete a CHAQUE vignette : c'est plus lent
+        que le delai d'attente de Home Assistant, et la tuile reste cassee.
+        L'API du compte rend l'instantane en une requete.
+        """
+        if self._password is None:
+            return await self.hass.async_add_executor_job(self._cloud_snapshot)
         source = self._rtsp_stream or await self.stream_source()
         if source is None:
             return None
