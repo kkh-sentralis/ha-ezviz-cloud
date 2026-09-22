@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 # Le jeton EZVIZ est un secret : jamais dans le depot.
 ezviz_token.txt
+
+# Carnet de bord local, hors depot : contient des identifiants personnels.
+PLAN.local.md
+docs/PLAN.md

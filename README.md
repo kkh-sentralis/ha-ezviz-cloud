@@ -69,7 +69,6 @@ depuis `homeassistant/components/ezviz/`, rejouer ces deux patchs, garder
 
 - [`docs/FINDINGS.md`](docs/FINDINGS.md) — le protocole WebSocket EZVIZ,
   rétro-conçu avant de découvrir que la bibliothèque le gérait déjà
-- [`docs/PLAN.md`](docs/PLAN.md) — l'avancement et les décisions
 - [`docs/ws_bridge.legacy.py`](docs/ws_bridge.legacy.py) — le pont autonome
   écrit pour la première approche, gardé comme référence du protocole
 

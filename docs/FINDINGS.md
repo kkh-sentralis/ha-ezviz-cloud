@@ -1,6 +1,6 @@
 # EZVIZ HB8C — comment obtenir le flux live
 
-Relevé le 2026-09-22 sur `HB8C-BH0697892` (modèle `CS-HB8c-R100-1N4WFL`), compte EU.
+Relevé le 2026-09-22 sur `HB8C-XX1234567` (modèle `CS-HB8c-R100-1N4WFL`), compte EU.
 
 ## Ce qui NE marche pas, et pourquoi
 
@@ -23,7 +23,7 @@ Le transport réel est un **WebSocket propriétaire**, découvert en lisant `ezu
 ```bash
 curl -X POST "https://ieuopen.ezvizlife.com/api/lapp/live/url/ezopen" \
   -F "accessToken=$TOKEN" \
-  -F "ezopen=ezopen://open.ezviz.com/BH0697892/1.hd.live" \
+  -F "ezopen=ezopen://open.ezviz.com/XX1234567/1.hd.live" \
   -F "isFlv=false" -F "isHttp=false" -F "userAgent=$UA"
 ```
 
@@ -33,7 +33,7 @@ curl -X POST "https://ieuopen.ezvizlife.com/api/lapp/live/url/ezopen" \
 Réponse :
 
 ```json
-{ "url": "wss://vtmparis.ezvizlife.com:20006/live?dev=BH0697892&chn=1&stream=1",
+{ "url": "wss://vtmparis.ezvizlife.com:20006/live?dev=XX1234567&chn=1&stream=1",
   "token": "dv.…" }
 ```
 
@@ -43,7 +43,7 @@ Les drapeaux `isFlv` / `isHttp` ne changent rien : pas de HTTP-FLV sur ce modèl
 
 ```bash
 curl -X POST "https://ieuopen.ezvizlife.com/api/lapp/device/capture" \
-  -d "accessToken=$TOKEN&deviceSerial=BH0697892&channelNo=1"
+  -d "accessToken=$TOKEN&deviceSerial=XX1234567&channelNo=1"
 ```
 
 Renvoie un `picUrl` téléchargeable : **JPEG 1280x720, ~98 Ko, image courante**.
@@ -56,7 +56,7 @@ paramètres manquaient. Sans eux, le serveur répond `6110 get stream error`.
 
 ```
 wss://vtmparis.ezvizlife.com:20006/live
-  ?dev=BH0697892&chn=1&stream=1
+  ?dev=XX1234567&chn=1&stream=1
   &ssn=<jeton de live/url/ezopen>&auth=1&biz=4&cln=100
 ```
 
