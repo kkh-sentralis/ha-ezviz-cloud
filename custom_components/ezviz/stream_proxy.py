@@ -71,9 +71,32 @@ SYNC_SEARCH_LIMIT = 200
 # deduit ni taille de trame ni frequence, refuse d'ecrire l'en-tete MPEG-TS, et
 # la VIDEO -- parfaitement valide -- tombe avec elle. On retente alors sans le
 # son : mieux vaut une image muette que pas d'image.
+# ⛔ ON TRANSCODE EN H.264, ON NE COPIE PAS.
+#
+# Ces cameras emettent du H.265 en 2560x1440. Copier ce flux tel quel deplace
+# le cout sur le navigateur -- Chrome decode mal le HEVC -- et go2rtc finit
+# parfois par le retranscoder de son cote. Resultat mesure : des gels toutes
+# les deux ou trois secondes.
+#
+# Un transcodage unique en H.264 720p coute au Pi, mais rend un flux que TOUT
+# navigateur lit nativement. C'est ce que faisait le montage go2rtc manuel,
+# et c'est pourquoi LUI etait fluide.
+VIDEO_ARGS = [
+    "-vf", "scale=1280:-2",
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+    "-g", "30",          # une image cle par seconde : demarrage rapide
+    "-b:v", "2M",
+]
+
+# Deux tentatives, dans cet ordre.
+#
+# Ces cameras annoncent parfois une piste audio mp2 a « 0 canaux » : ffmpeg n'en
+# deduit ni taille de trame ni frequence, refuse d'ecrire l'en-tete MPEG-TS, et
+# la VIDEO -- parfaitement valide -- tombe avec elle. On retente alors sans le
+# son : mieux vaut une image muette que pas d'image.
 CODEC_ATTEMPTS: tuple[tuple[list[str], str], ...] = (
-    (["-c:v", "copy", "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
-    (["-an", "-c:v", "copy"], "sans audio"),
+    ([*VIDEO_ARGS, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
+    ([*VIDEO_ARGS, "-an"], "sans audio"),
 )
 
 
