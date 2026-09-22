@@ -1,6 +1,6 @@
-> Note historique : ce document décrit le protocole WebSocket rétro-conçu
-> avant de découvrir que `pyezvizapi` gère le transport VTM nativement.
-> L'intégration ne l'utilise plus.
+> Ce document décrit le protocole WebSocket rétro-conçu sur une HB8C.
+> L'intégration s'en sert : `ws_bridge.py`, livré avec elle, en est
+> l'implémentation, lancée en sous-processus par `stream_proxy.py`.
 
 # EZVIZ HB8C — comment obtenir le flux live
 
@@ -76,11 +76,21 @@ payload type 96, fragmenté en unités FU (NAL 49, RFC 7798).
 Mesuré sur 26 Mo : VPS/SPS/PPS x33, IDR_W_RADL x33, ~4360 images
 intermédiaires. Flux valide et décodable, 2560x1440, ~2,2 Mbps.
 
-## Reste à faire : le brancher dans Home Assistant
+## Comment l'intégration s'en sert
 
-1. Déposer `ws_bridge.py` sur le Pi (add-on File editor ou SSH)
-2. Source `go2rtc` : `exec:python3 ws_bridge.py … | ffmpeg -f hevc -i - -c copy -f rtsp …`
-3. L'entité `camera` apparaît via go2rtc, déjà installé
+Aucun fichier à déposer, aucun add-on : `ws_bridge.py` est livré par HACS avec
+l'intégration, et `stream_proxy.py` le lance en sous-processus.
+
+```
+ws_bridge.py  --tube noyau-->  ffmpeg  --tube noyau-->  boucle asyncio  -->  réponse
+```
+
+Le pont a son propre interpréteur, comme le montage go2rtc manuel. Dépaqueter
+du RTP dans un fil d'exécuteur disputait le verrou global à la boucle
+d'événements : 6,5 images/s contre 10,5 pour le même flux hors du processus.
+
+L'URL de flux porte le jeton de session : elle passe par l'entrée standard du
+pont, jamais par la ligne de commande.
 
 ## Déjà disponible sans rien coder
 
