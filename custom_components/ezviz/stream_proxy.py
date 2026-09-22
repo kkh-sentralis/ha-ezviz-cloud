@@ -51,6 +51,12 @@ DEFAULT_HTTP_PORT = 8123
 # Taille de lecture sur la sortie de ffmpeg.
 BLOCK_SIZE = 32 * 1024
 
+# En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
+MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
+
+# Combien de paquets on accepte de traverser pour trouver ce point.
+SYNC_SEARCH_LIMIT = 200
+
 
 ANNEX_B_START = b"\x00\x00\x00\x01"
 RTP_VERSION_2 = 0x80
@@ -174,16 +180,26 @@ class EzvizCloudStreamView(HomeAssistantView):
                     stream.start()
                     payloads = stream.iter_payloads()
 
-                    # On ne DEVINE pas le format : le premier paquet non vide le
-                    # dit. La bibliotheque suppose du MPEG-PS et lance
-                    # `ffmpeg -f mpeg` ; les cameras sur batterie emettent du
-                    # H.265 en RTP, d'ou un EINVAL silencieux (stderr=DEVNULL).
+                    # ⛔ ATTENDRE UN EN-TETE DE PACK AVANT D'ALIMENTER FFMPEG.
+                    #
+                    # Le flux est du MPEG-PS, mais le premier paquet recu est
+                    # rarement un pack header : c'est le plus souvent un PES
+                    # isole (000001bd private stream, 000001c0 audio). Demarre
+                    # au milieu d'un PES, ffmpeg ne se synchronise jamais et
+                    # sort en EINVAL -- le fameux « status 234 » de
+                    # copy_cloud_stream_to_mpegts, qui alimente des le premier
+                    # paquet et souffre exactement du meme defaut.
                     first = b""
-                    for first in payloads:
-                        if first:
+                    for candidate in itertools.islice(payloads, SYNC_SEARCH_LIMIT):
+                        if candidate.startswith(MPEG_PS_PACK_HEADER):
+                            first = candidate
                             break
                     if not first:
-                        _LOGGER.warning("EZVIZ %s : flux vide", serial)
+                        _LOGGER.warning(
+                            "EZVIZ %s : aucun en-tete de pack MPEG-PS dans les "
+                            "%d premiers paquets",
+                            serial, SYNC_SEARCH_LIMIT,
+                        )
                         return
 
                     transport = detect_transport(first)
@@ -216,11 +232,27 @@ class EzvizCloudStreamView(HomeAssistantView):
                         [
                             ffmpeg_binary, "-hide_banner", "-loglevel", "warning",
                             "-fflags", "nobuffer", "-flags", "low_delay",
+                            "-probesize", "5000000", "-analyzeduration", "5000000",
                             "-f", input_format, "-i", "pipe:0",
                             "-c", "copy", "-f", "mpegts", "pipe:1",
                         ],
-                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        # ⛔ JAMAIS DEVNULL. copy_cloud_stream_to_mpegts jette
+                        # cette sortie, et c'est pour ca que son « status 234 »
+                        # etait indiagnosticable.
+                        stderr=subprocess.PIPE,
                     )
+
+                    def _log_ffmpeg() -> None:
+                        """Remonter les plaintes de ffmpeg dans le journal."""
+                        assert remux is not None and remux.stderr is not None
+                        for raw in remux.stderr:
+                            line = raw.decode("utf-8", "replace").strip()
+                            if line:
+                                _LOGGER.warning("EZVIZ %s ffmpeg: %s", serial, line)
+
+                    Thread(target=_log_ffmpeg, daemon=True).start()
 
                     def _drain() -> None:
                         """Rendre le MPEG-TS au client au fil de l'eau."""
@@ -232,11 +264,16 @@ class EzvizCloudStreamView(HomeAssistantView):
                     drain.start()
 
                     assert remux.stdin is not None
-                    for payload in itertools.chain([first], payloads):
-                        data = depack.feed(payload) if depack else payload
-                        if data:
-                            remux.stdin.write(data)
-                    remux.stdin.close()
+                    try:
+                        for payload in itertools.chain([first], payloads):
+                            data = depack.feed(payload) if depack else payload
+                            if data:
+                                remux.stdin.write(data)
+                        remux.stdin.close()
+                    except BrokenPipeError:
+                        # ffmpeg s'est arrete : soit le client a ferme, soit il
+                        # a refuse le flux. Sa sortie d'erreur le dira.
+                        _LOGGER.debug("EZVIZ %s : ffmpeg a ferme son entree", serial)
                     drain.join(timeout=5)
             except PyEzvizError:
                 _LOGGER.exception("EZVIZ cloud stream failed for %s", serial)
