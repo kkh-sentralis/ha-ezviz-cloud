@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 from pyezvizapi.exceptions import PyEzvizError
 
+from homeassistant.components.ffmpeg import get_ffmpeg_manager
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant, callback
@@ -45,6 +46,59 @@ QUEUE_SIZE = 64
 
 # Repli si le composant http ne publie pas son port.
 DEFAULT_HTTP_PORT = 8123
+
+# Taille de lecture sur la sortie de ffmpeg.
+BLOCK_SIZE = 32 * 1024
+
+
+ANNEX_B_START = b"\x00\x00\x00\x01"
+RTP_VERSION_2 = 0x80
+H265_FRAGMENTATION_UNIT = 49
+
+
+class _Depacketizer:
+    """RTP -> H.265 Annex-B (RFC 7798).
+
+    `cloud_stream.copy_cloud_stream_to_mpegts` suppose que la charge utile est
+    du MPEG-PS et lance `ffmpeg -f mpeg`. Les cameras sur batterie emettent du
+    H.265 en RTP : ffmpeg sort alors en EINVAL (code 234). La bibliotheque
+    connait pourtant ce cas -- son enumeration StreamTransport liste RTP -- mais
+    le copieur ne l'exploite pas. On dépaquetise donc nous-memes.
+
+    Mesure du 2026-09-22 sur 26 Mo : VPS/SPS/PPS x33, IDR x33, flux decodable.
+    """
+
+    def __init__(self) -> None:
+        self._fragment: bytearray | None = None
+
+    def feed(self, packet: bytes) -> bytes:
+        """Rendre les octets Annex-B produits par ce paquet RTP."""
+        if len(packet) < 13 or packet[0] & 0xC0 != RTP_VERSION_2:
+            return b""
+        header = 12 + 4 * (packet[0] & 0x0F)
+        if packet[0] & 0x10:  # extension
+            if len(packet) < header + 4:
+                return b""
+            header += 4 + 4 * int.from_bytes(packet[header + 2 : header + 4], "big")
+        payload = packet[header:]
+        if len(payload) < 3:
+            return b""
+
+        if (payload[0] >> 1) & 0x3F != H265_FRAGMENTATION_UNIT:
+            return ANNEX_B_START + payload
+
+        fu = payload[2]
+        if fu & 0x80:  # debut de fragment
+            inner = ((fu & 0x3F) << 1) | (payload[0] & 0x81)
+            self._fragment = bytearray([inner, payload[1]])
+        if self._fragment is None:
+            return b""
+        self._fragment.extend(payload[3:])
+        if fu & 0x40:  # fin de fragment
+            out = ANNEX_B_START + bytes(self._fragment)
+            self._fragment = None
+            return out
+        return b""
 
 
 class _QueueWriter:
@@ -99,20 +153,53 @@ class EzvizCloudStreamView(HomeAssistantView):
         queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=QUEUE_SIZE)
         writer = _QueueWriter(self.hass, queue)
 
-        def _produce() -> None:
-            # Import tardif : ce module tire subprocess, threading et ffmpeg, et
-            # l'importer au chargement de la plateforme bloque la boucle.
-            from pyezvizapi.cloud_stream import (  # noqa: PLC0415
-                copy_cloud_stream_to_mpegts,
-            )
+        ffmpeg_binary = get_ffmpeg_manager(self.hass).binary
 
+        def _produce() -> None:
+            # Imports tardifs : ces modules tirent subprocess, threading et
+            # ffmpeg, et les charger a l'import de la plateforme bloque la boucle.
+            import subprocess  # noqa: PLC0415
+            from threading import Thread  # noqa: PLC0415
+
+            from pyezvizapi.cloud_stream import open_cloud_stream  # noqa: PLC0415
+
+            remux = None
             try:
-                copy_cloud_stream_to_mpegts(client, serial, writer)
+                remux = subprocess.Popen(  # noqa: S603
+                    [
+                        ffmpeg_binary, "-hide_banner", "-loglevel", "error",
+                        "-fflags", "nobuffer", "-flags", "low_delay",
+                        "-f", "hevc", "-i", "pipe:0",
+                        "-c", "copy", "-f", "mpegts", "pipe:1",
+                    ],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                )
+
+                def _drain() -> None:
+                    """Rendre le MPEG-TS au client au fil de l'eau."""
+                    assert remux is not None and remux.stdout is not None
+                    while chunk := remux.stdout.read(BLOCK_SIZE):
+                        writer.write(chunk)
+
+                drain = Thread(target=_drain, daemon=True)
+                drain.start()
+
+                depack = _Depacketizer()
+                with open_cloud_stream(client, serial) as stream:
+                    stream.start()
+                    assert remux.stdin is not None
+                    for payload in stream.iter_payloads():
+                        if annex_b := depack.feed(payload):
+                            remux.stdin.write(annex_b)
+                    remux.stdin.close()
+                drain.join(timeout=5)
             except PyEzvizError:
                 _LOGGER.exception("EZVIZ cloud stream failed for %s", serial)
             except Exception:  # noqa: BLE001 - le thread ne doit jamais tuer HA
                 _LOGGER.exception("Unexpected EZVIZ cloud stream error for %s", serial)
             finally:
+                if remux is not None and remux.poll() is None:
+                    remux.kill()
                 writer.close()
 
         producer = self.hass.async_add_executor_job(_produce)
