@@ -1,46 +1,53 @@
+<div align="center">
+
 # EZVIZ
 
-Intégration EZVIZ pour Home Assistant, avec prise en
-charge du flux vidéo des caméras sur batterie.
+**Intégration EZVIZ pour Home&nbsp;Assistant**
 
-Elle remplace l'intégration officielle et en conserve
-l'intégralité des fonctions : découverte du compte,
-PTZ, sirène, détection de mouvement, niveau de
-batterie, capteurs et commutateurs.
+Le flux vidéo des caméras sur batterie, nativement.
 
-## Pourquoi
+[![Version](https://img.shields.io/github/v/release/kkh-sentralis/ha-ezviz-cloud?style=for-the-badge&color=41BDF5&labelColor=1C1C1C)](https://github.com/kkh-sentralis/ha-ezviz-cloud/releases)
+[![HACS](https://img.shields.io/badge/HACS-Integration-41BDF5?style=for-the-badge&labelColor=1C1C1C)](https://hacs.xyz)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.9+-41BDF5?style=for-the-badge&labelColor=1C1C1C)](https://www.home-assistant.io)
+[![Licence](https://img.shields.io/badge/Licence-Apache%202.0-41BDF5?style=for-the-badge&labelColor=1C1C1C)](NOTICE)
 
-Les caméras EZVIZ sur batterie ne diffusent aucun
-flux RTSP local. L'intégration officielle cherche ce
-flux sur le réseau, ne le trouve pas, et ces caméras
-restent sans image dans Home Assistant.
+</div>
 
-Par ailleurs, le mode *Always-On Video* empêche
-l'intégration officielle de se configurer : une seule
-caméra dans ce mode suffit à bloquer l'ensemble du
-compte.
+---
 
-Cette intégration corrige les deux points.
+Cette intégration **remplace l'intégration EZVIZ
+officielle** et en conserve toutes les fonctions —
+découverte du compte, PTZ, sirène, détection de
+mouvement, batterie, capteurs et commutateurs.
 
-## Fonctionnalités
+Elle y ajoute ce qui manquait : **l'image des caméras
+sur batterie**.
 
-- **Flux vidéo** des caméras sur batterie, via le
-  cloud EZVIZ, sans add-on ni service externe
-- **Instantanés** pour les vignettes et les
-  automatisations
-- **Mode Always-On Video** pris en charge
-- **Caméras filaires** inchangées : le flux RTSP
-  local reste prioritaire
-- **Aucun jeton à gérer** : la session du compte
-  suffit et se renouvelle seule
+## Le problème
 
-## Prérequis
+Les caméras EZVIZ sur batterie n'ouvrent aucun flux
+RTSP local. L'intégration officielle le cherche sur le
+réseau, ne le trouve jamais, et ces caméras restent
+muettes dans Home Assistant.
 
-- Home Assistant 2026.9 ou supérieur
-- HACS
-- Un compte EZVIZ
+Le mode **Always-On Video** aggrave la situation : une
+seule caméra dans ce mode empêche la configuration de
+l'ensemble du compte.
+
+## Ce que vous obtenez
+
+| | |
+|---|---|
+| **Flux vidéo** | via le cloud EZVIZ, sans add-on |
+| **Instantanés** | vignettes et automatisations |
+| **Always-On Video** | pris en charge |
+| **Caméras filaires** | RTSP local, inchangé |
+| **Aucun jeton** | la session du compte suffit |
 
 ## Installation
+
+> **Prérequis** — Home Assistant 2026.9 ou supérieur,
+> HACS, et un compte EZVIZ.
 
 **1.** Dans HACS, ajouter ce dépôt en dépôt
 personnalisé, de type *Integration*.
@@ -48,38 +55,43 @@ personnalisé, de type *Integration*.
 **2.** Télécharger **EZVIZ**, puis redémarrer Home
 Assistant.
 
-**3.** Aller dans *Paramètres → Appareils et services
-→ Ajouter une intégration*, choisir **EZVIZ** et
-renseigner son compte.
+**3.** *Paramètres → Appareils et services → Ajouter
+une intégration → EZVIZ*, et renseigner son compte.
 
-Aucune autre étape n'est requise : ni add-on, ni
-fichier de configuration, ni clé d'API.
+Ni add-on, ni fichier de configuration, ni clé d'API.
 
 ## Configuration
 
 L'intégration ne demande que les identifiants du
-compte EZVIZ et la région correspondante.
+compte et sa région. La source du flux est ensuite
+choisie automatiquement :
 
-Le flux vidéo est sélectionné automatiquement :
-
-| Caméra | Source du flux |
+| Caméra | Source |
 |---|---|
 | Filaire, RTSP configuré | RTSP local |
 | Sur batterie | Cloud EZVIZ |
 
-## Compatibilité
+<details>
+<summary><b>Compatibilité</b></summary>
 
-Testée sur EZVIZ HB8C. Les autres modèles sur
-batterie suivent le même protocole et devraient
-fonctionner à l'identique.
+<br>
 
-Les caméras filaires conservent le comportement de
-l'intégration officielle, dont le code est repris
-sans modification sur ce point.
+Validée sur **EZVIZ HB8C**. Les autres modèles sur
+batterie partagent le même protocole et devraient se
+comporter à l'identique.
 
-## Dépannage
+Les caméras filaires conservent le fonctionnement de
+l'intégration officielle : le code d'origine est
+repris sans modification sur ce chemin.
 
-Les traces détaillées s'activent en ajoutant à
+</details>
+
+<details>
+<summary><b>Dépannage</b></summary>
+
+<br>
+
+Activer les traces détaillées dans
 `configuration.yaml` :
 
 ```yaml
@@ -88,19 +100,30 @@ logger:
     custom_components.ezviz: debug
 ```
 
-Le journal indique alors le format détecté pour
-chaque flux ainsi que la sortie de ffmpeg.
+Le journal indique alors le format détecté pour chaque
+flux, ainsi que la sortie complète de ffmpeg.
 
-## Mise à jour depuis l'amont
+</details>
+
+<details>
+<summary><b>Mise à jour depuis l'amont</b></summary>
+
+<br>
 
 Cette intégration suit le code officiel de Home
-Assistant et n'en modifie que trois fichiers. Pour
-l'aligner sur une nouvelle version : reprendre le
-dossier `homeassistant/components/ezviz/`, rejouer
-les correctifs, et conserver `stream_proxy.py` ainsi
-que `translations/`.
+Assistant et n'en modifie que trois fichiers.
 
-## Licence
+Pour l'aligner sur une nouvelle version : reprendre
+`homeassistant/components/ezviz/`, rejouer les
+correctifs, conserver `stream_proxy.py` et
+`translations/`.
 
-Code dérivé de Home Assistant, distribué sous licence
-Apache 2.0. Voir [NOTICE](NOTICE).
+</details>
+
+---
+
+<div align="center">
+<sub>
+Code dérivé de Home Assistant, sous licence Apache 2.0.
+</sub>
+</div>
