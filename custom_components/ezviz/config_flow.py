@@ -35,7 +35,9 @@ from .const import (
     CONF_APP_KEY,
     CONF_APP_SECRET,
     CONF_OPEN_HOST,
+    CONF_STREAM_WIDTH,
     DEFAULT_OPEN_HOST,
+    DEFAULT_STREAM_WIDTH,
     ATTR_SERIAL,
     ATTR_TYPE_CAMERA,
     ATTR_TYPE_CLOUD,
@@ -429,6 +431,12 @@ class EzvizOptionsFlowHandler(OptionsFlowWithReload):
                     CONF_APP_SECRET,
                     default=self.config_entry.options.get(CONF_APP_SECRET, ""),
                 ): str,
+                vol.Optional(
+                    CONF_STREAM_WIDTH,
+                    default=self.config_entry.options.get(
+                        CONF_STREAM_WIDTH, DEFAULT_STREAM_WIDTH
+                    ),
+                ): int,
                 vol.Optional(
                     CONF_OPEN_HOST,
                     default=self.config_entry.options.get(

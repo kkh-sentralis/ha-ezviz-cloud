@@ -191,7 +191,8 @@
           "timeout": "Request timeout (seconds)",
           "app_key": "EZVIZ Open Platform AppKey",
           "app_secret": "EZVIZ Open Platform AppSecret",
-          "open_host": "Open Platform region host"
+          "open_host": "Open Platform region host",
+          "stream_width": "Stream width in pixels (0 = native)"
         }
       }
     }

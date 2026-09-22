@@ -111,20 +111,6 @@ IMKH_HEADER = b"IMKH"
 # Un transcodage unique en H.264 720p coute au Pi, mais rend un flux que TOUT
 # navigateur lit nativement. C'est ce que faisait le montage go2rtc manuel,
 # et c'est pourquoi LUI etait fluide.
-# Hauteur cible du transcodage. Le Pi 5 n'a pas d'encodeur H.264 materiel :
-# libx264 tourne en logiciel, et le cout suit le nombre de pixels.
-#   720p  0,9 Mpx   confortable
-#   1080p 2,1 Mpx   tient sans effort en ultrafast
-#   1440p 3,7 Mpx   a la limite -- et un encodeur en retard ne ralentit pas,
-#                   il PERD des images, ce qui saccade
-TARGET_WIDTH = 1920
-
-VIDEO_ARGS = [
-    "-vf", f"scale={TARGET_WIDTH}:-2",
-    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-    "-g", "30",
-    "-b:v", "2M",
-]
 
 # Deux tentatives, dans cet ordre.
 #
@@ -132,10 +118,19 @@ VIDEO_ARGS = [
 # deduit ni taille de trame ni frequence, refuse d'ecrire l'en-tete MPEG-TS, et
 # la VIDEO -- parfaitement valide -- tombe avec elle. On retente alors sans le
 # son : mieux vaut une image muette que pas d'image.
-CODEC_ATTEMPTS: tuple[tuple[list[str], str], ...] = (
-    ([*VIDEO_ARGS, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
-    ([*VIDEO_ARGS, "-an"], "sans audio"),
-)
+def _codec_attempts(width: int) -> tuple[tuple[list[str], str], ...]:
+    """Les deux tentatives, pour une largeur de transcodage donnee."""
+    video = [
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-g", "30",
+        "-b:v", "2M",
+    ]
+    if width:
+        video = ["-vf", f"scale={width}:-2", *video]
+    return (
+        ([*video, "-c:a", "aac", "-ac", "1", "-ar", "16000"], "avec audio"),
+        ([*video, "-an"], "sans audio"),
+    )
 
 
 ANNEX_B_START = b"\x00\x00\x00\x01"
@@ -431,7 +426,9 @@ class EzvizCloudStreamView(HomeAssistantView):
             CONF_APP_KEY,
             CONF_APP_SECRET,
             CONF_OPEN_HOST,
+            CONF_STREAM_WIDTH,
             DEFAULT_OPEN_HOST,
+            DEFAULT_STREAM_WIDTH,
         )
 
         found = _find_account(self.hass, serial)
@@ -442,6 +439,7 @@ class EzvizCloudStreamView(HomeAssistantView):
         app_key = options.get(CONF_APP_KEY, "")
         app_secret = options.get(CONF_APP_SECRET, "")
         open_host = options.get(CONF_OPEN_HOST) or DEFAULT_OPEN_HOST
+        stream_width = int(options.get(CONF_STREAM_WIDTH, DEFAULT_STREAM_WIDTH))
         if not app_key or not app_secret:
             _LOGGER.warning(
                 "EZVIZ %s : flux indisponible, AppKey et AppSecret non "
@@ -582,14 +580,15 @@ class EzvizCloudStreamView(HomeAssistantView):
 
         def _produce() -> None:
             try:
+                attempts = _codec_attempts(stream_width)
                 known = _WORKING_CODEC.get(serial)
                 order = (
-                    (known, *(i for i in range(len(CODEC_ATTEMPTS)) if i != known))
+                    (known, *(i for i in range(len(attempts)) if i != known))
                     if known is not None
-                    else range(len(CODEC_ATTEMPTS))
+                    else range(len(attempts))
                 )
                 for index in order:
-                    codec_args, label = CODEC_ATTEMPTS[index]
+                    codec_args, label = attempts[index]
                     if _attempt(codec_args, label):
                         _WORKING_CODEC[serial] = index
                         return

@@ -83,6 +83,23 @@ qu'elles produisent expire au bout de sept jours,
 mais il est renouvelé automatiquement : rien à
 refaire.
 
+### Résolution du flux
+
+L'option **Largeur du flux** règle le transcodage :
+
+| Valeur | Rendu |
+|---|---|
+| `1280` | 720p — le plus fluide |
+| `1920` | 1080p — par défaut |
+| `2560` | 1440p — machines confortables |
+| `0` | résolution native, sans redimensionnement |
+
+Le Pi n'ayant pas d'encodeur H.264 matériel, le coût
+suit le nombre de pixels. Un encodeur en retard ne
+ralentit pas : il **perd des images**. Baisser cette
+valeur est le premier réglage à tenter si le flux
+saccade.
+
 ### Source du flux
 
 | Caméra | Source |

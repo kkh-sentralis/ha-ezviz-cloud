@@ -14,6 +14,17 @@ CONF_APP_KEY = "app_key"
 CONF_APP_SECRET = "app_secret"
 CONF_OPEN_HOST = "open_host"
 DEFAULT_OPEN_HOST = "ieuopen.ezvizlife.com"
+
+# Largeur du transcodage. Le Pi 5 n'a pas d'encodeur H.264 materiel : le cout
+# suit le nombre de pixels, et un encodeur en retard ne ralentit pas -- il PERD
+# des images. Reglable, parce que le bon compromis depend de la machine et du
+# nombre de cameras ouvertes en meme temps.
+#   1280  720p   le plus fluide
+#   1920  1080p  defaut
+#   2560  1440p  a reserver aux machines confortables
+#      0        pas de redimensionnement, resolution native
+CONF_STREAM_WIDTH = "stream_width"
+DEFAULT_STREAM_WIDTH = 1920
 ATTR_TYPE_CLOUD = "EZVIZ_CLOUD_ACCOUNT"
 ATTR_TYPE_CAMERA = "CAMERA_ACCOUNT"
 CONF_SESSION_ID = "session_id"
