@@ -187,7 +187,10 @@ class EzvizCloudStreamView(HomeAssistantView):
                         return
 
                     transport = detect_transport(first)
-                    _LOGGER.info(
+                    # WARNING et non INFO : le journal systeme de Home Assistant
+                    # ne remonte que WARNING et au-dessus, et cette ligne est la
+                    # seule facon de savoir ce que la camera emet reellement.
+                    _LOGGER.warning(
                         "EZVIZ %s : transport %s, premier paquet %d o : %s",
                         serial, transport.name, len(first), first[:32].hex(),
                     )
