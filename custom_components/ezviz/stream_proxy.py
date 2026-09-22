@@ -362,7 +362,11 @@ class EzvizCloudStreamView(HomeAssistantView):
                     client.get_detection_sensibility(serial)
                     time.sleep(WAKE_SETTLE)
 
-                info = get_cloud_stream_info(client, serial)
+                # refresh_vtm=True : sans lui, la liste des serveurs VTM n'est
+                # pas rechargee et la resolution echoue sur « Could not find VTM
+                # server ». open_cloud_stream le passe par defaut ; en appelant
+                # get_cloud_stream_info directement, on herite du False.
+                info = get_cloud_stream_info(client, serial, refresh_vtm=True)
                 origin = f"https://{urlsplit(str(info['stream_url'])).hostname}"
                 for port in WEBSOCKET_PORTS:
                     url = _websocket_url(str(info["stream_url"]), port)
