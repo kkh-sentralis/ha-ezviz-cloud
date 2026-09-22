@@ -55,6 +55,10 @@ BLOCK_SIZE = 32 * 1024
 PROBE_SIZE = 96 * 1024        # octets
 ANALYZE_DURATION = 1_000_000  # microsecondes, soit une seconde
 
+# Au-dela, on considere que cette tentative ne donnera rien et on passe a la
+# suivante. Le direct ne tolere pas qu'on attende plus longtemps.
+FIRST_OUTPUT_TIMEOUT = 12.0
+
 # En-tete de pack MPEG-PS : le seul point ou ffmpeg sait se synchroniser.
 MPEG_PS_PACK_HEADER = b"\x00\x00\x01\xba"
 
@@ -183,6 +187,7 @@ class EzvizCloudStreamView(HomeAssistantView):
             Le basculement se decide sur la PREMIERE sortie de ffmpeg : une fois
             qu'on a ecrit dans la reponse HTTP, on ne peut plus recommencer.
             """
+            import select  # noqa: PLC0415
             import subprocess  # noqa: PLC0415
             from threading import Thread  # noqa: PLC0415
 
@@ -275,11 +280,26 @@ class EzvizCloudStreamView(HomeAssistantView):
                     Thread(target=_feed, daemon=True).start()
 
                     assert remux.stdout is not None
-                    if not (chunk := remux.stdout.read(BLOCK_SIZE)):
-                        return False  # ffmpeg est mort sans rien produire
+
+                    # ⛔ ATTENTE BORNEE, ET LECTURES NON BLOQUANTES.
+                    #
+                    # read(n) attend n octets ENTIERS ou la fin du flux : si
+                    # ffmpeg ne produit rien sans pour autant mourir, on attend
+                    # indefiniment et le repli n'a jamais lieu. select() borne
+                    # l'attente, read1() rend ce qui est disponible sans
+                    # reclamer un bloc complet -- ce qui compte pour du direct.
+                    ready, _, _ = select.select(
+                        [remux.stdout], [], [], FIRST_OUTPUT_TIMEOUT
+                    )
+                    if not ready or not (chunk := remux.stdout.read1(BLOCK_SIZE)):
+                        _LOGGER.warning(
+                            "EZVIZ %s : aucune image en %s s (%s)",
+                            serial, FIRST_OUTPUT_TIMEOUT, label,
+                        )
+                        return False
 
                     writer.write(chunk)
-                    while chunk := remux.stdout.read(BLOCK_SIZE):
+                    while chunk := remux.stdout.read1(BLOCK_SIZE):
                         writer.write(chunk)
                     return True
             except PyEzvizError:
@@ -297,7 +317,7 @@ class EzvizCloudStreamView(HomeAssistantView):
                 for codec_args, label in CODEC_ATTEMPTS:
                     if _attempt(codec_args, label):
                         return
-                    _LOGGER.info(
+                    _LOGGER.warning(
                         "EZVIZ %s : diffusion %s impossible, repli", serial, label
                     )
                 _LOGGER.warning("EZVIZ %s : aucune diffusion possible", serial)
