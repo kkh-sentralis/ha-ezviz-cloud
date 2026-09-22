@@ -70,6 +70,9 @@
       },
       "ptz_up": {
         "name": "PTZ haut"
+      },
+      "flip_image": {
+        "name": "Retourner l'image"
       }
     },
     "image": {

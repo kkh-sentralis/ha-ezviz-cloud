@@ -60,6 +60,16 @@ BUTTON_ENTITIES = (
         ),
         supported_ext=str(SupportExt.SupportPtz.value),
     ),
+    EzvizButtonEntityDescription(
+        key="flip_image",
+        translation_key="flip_image",
+        # flip_image() bascule l'orientation a chaque appel : un bouton, donc,
+        # et non un commutateur -- l'etat courant n'est pas lisible.
+        method=lambda pyezviz_client, serial, _run: pyezviz_client.flip_image(
+            serial
+        ),
+        supported_ext=str(SupportExt.SupportPtzCenterMirror.value),
+    ),
 )
 
 

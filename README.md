@@ -40,6 +40,8 @@ l'ensemble du compte.
 |---|---|
 | **Flux vidéo** | via le cloud EZVIZ, sans add-on |
 | **Instantanés** | vignettes et automatisations |
+| **Son** | si la caméra le permet, sinon repli |
+| **Retourner l'image** | bouton, pour les caméras montées à l'envers |
 | **Always-On Video** | pris en charge |
 | **Caméras filaires** | RTSP local, inchangé |
 | **Aucun jeton** | la session du compte suffit |
